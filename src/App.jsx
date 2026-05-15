@@ -4,6 +4,7 @@ import Dashboard  from "./pages/Dashboard"
 import Vacunas    from "./pages/Vacunas"
 import Inventario from "./pages/Inventario"
 import Reportes   from "./pages/Reportes"
+import Perfil     from "./pages/Perfil"
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
         <Route path="/vacunas"    element={<Vacunas />} />
         <Route path="/inventario" element={<Inventario />} />
         <Route path="/reportes"   element={<Reportes />} />
+        <Route path="/perfil"     element={<Perfil />} />
       </Routes>
     </BrowserRouter>
   )
