@@ -581,7 +581,7 @@ function IcoUser() {
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
-        d="M5.121 17.804A9 9 0 1118.879 17.804M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
       />
     </svg>
   );
