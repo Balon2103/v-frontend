@@ -23,10 +23,36 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault();
 
+    // limpiar error previo
     setError("");
 
-    if (!email || !password) {
-      setError("Por favor complete todos los campos.");
+    // evitar múltiples submits
+    if (cargando) return;
+
+    // ─────────────────────────────
+    // VALIDACIONES FRONTEND
+    // ─────────────────────────────
+
+    const emailLimpio = email.trim().toLowerCase();
+    const passwordLimpia = password.trim();
+
+    // campos vacíos
+    if (!emailLimpio || !passwordLimpia) {
+      setError("Debe completar todos los campos.");
+      return;
+    }
+
+    // validar email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(emailLimpio)) {
+      setError("Ingrese un correo electrónico válido.");
+      return;
+    }
+
+    // longitud mínima password
+    if (passwordLimpia.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres.");
       return;
     }
 
@@ -41,31 +67,92 @@ export default function Login() {
         },
 
         body: JSON.stringify({
-          email,
-          password,
+          email: emailLimpio,
+          password: passwordLimpia,
         }),
       });
 
-      const data = await response.json();
+      // ─────────────────────────────
+      // VALIDAR RESPUESTA JSON
+      // ─────────────────────────────
+      let data;
 
-      if (!response.ok) {
-        setError(data.mensaje || "Error al iniciar sesión");
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Respuesta inválida del servidor.");
+      }
 
+      // ─────────────────────────────
+      // MANEJO DE ERRORES HTTP
+      // ─────────────────────────────
+
+      // credenciales incorrectas
+      if (response.status === 401) {
+        setError("Correo o contraseña incorrectos.");
         return;
       }
 
-      // Guardar JWT
+      // demasiados intentos
+      if (response.status === 429) {
+        setError("Demasiados intentos. Intente nuevamente más tarde.");
+        return;
+      }
+
+      // error servidor
+      if (response.status >= 500) {
+        setError("Error interno del servidor.");
+        return;
+      }
+
+      // otras respuestas
+      if (!response.ok) {
+        setError(data?.mensaje || "No se pudo iniciar sesión.");
+        return;
+      }
+
+      // ─────────────────────────────
+      // VALIDAR TOKEN
+      // ─────────────────────────────
+
+      if (!data.token) {
+        setError("El servidor no devolvió un token válido.");
+        return;
+      }
+
+      // validar usuario
+      if (!data.user) {
+        setError("No se recibió información del usuario.");
+        return;
+      }
+
+      // ─────────────────────────────
+      // GUARDAR SESIÓN
+      // ─────────────────────────────
+
       localStorage.setItem("token", data.token);
 
-      // Guardar usuario
       localStorage.setItem("usuario", JSON.stringify(data.user));
 
-      // Redirigir
-      navigate("/dashboard");
+      // timestamp login
+      localStorage.setItem("loginTime", Date.now().toString());
+
+      // ─────────────────────────────
+      // REDIRECCIÓN
+      // ─────────────────────────────
+
+      navigate("/dashboard", {
+        replace: true,
+      });
     } catch (error) {
       console.error(error);
 
-      setError("No se pudo conectar con el servidor.");
+      // backend caído
+      if (error.message.includes("Failed to fetch")) {
+        setError("No se pudo conectar con el servidor.");
+      } else {
+        setError(error.message || "Ocurrió un error inesperado.");
+      }
     } finally {
       setCargando(false);
     }
