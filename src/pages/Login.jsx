@@ -6,12 +6,13 @@ import { useNavigate } from "react-router-dom";
 //                      src/assets/logo-asic.png
 // Y cambia las líneas de abajo:
 import logoMinisterio from "/logo-s.png";
-import logoAsic from "/logo-t.png"
+import logoAsic from "/logo-t.png";
 // import logoAsic       from "../assets/logo-asic.png";
 // Luego reemplaza logoPlaceholder1 y logoPlaceholder2 por esas variables.
 // ────────────────────────────────────────────────────────────
 
 export default function Login() {
+  const API = import.meta.env.VITE_API_URL;
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,26 +22,49 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+
     setError("");
+
     if (!email || !password) {
       setError("Por favor complete todos los campos.");
       return;
     }
+
     setCargando(true);
+
     try {
-      // ── Modo demo ──────────────────────────────────────────
-      localStorage.setItem("token", "token-de-prueba");
-      localStorage.setItem(
-        "usuario",
-        JSON.stringify({
-          nombre: "Coordinador ASIC",
+      const response = await fetch(`${API}/api/auth/login`, {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json",
+        },
+
+        body: JSON.stringify({
           email,
-          rol: "administrador",
+          password,
         }),
-      );
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.mensaje || "Error al iniciar sesión");
+
+        return;
+      }
+
+      // Guardar JWT
+      localStorage.setItem("token", data.token);
+
+      // Guardar usuario
+      localStorage.setItem("usuario", JSON.stringify(data.user));
+
+      // Redirigir
       navigate("/dashboard");
-      return;
-    } catch {
+    } catch (error) {
+      console.error(error);
+
       setError("No se pudo conectar con el servidor.");
     } finally {
       setCargando(false);
