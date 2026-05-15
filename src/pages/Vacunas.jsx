@@ -418,9 +418,10 @@ export default function Vacunas() {
 
   const NAV = [
     { label: "Inicio", ruta: "/dashboard", activo: false },
-    { label: "Vacunas", ruta: "/vacunas", activo: true },
-    { label: "Inventario", ruta: "/inventario", activo: false },
+    { label: "Vacunas", ruta: "/vacunas", activo: false },
+    { label: "Inventario", ruta: "/inventario", activo: true },
     { label: "Reportes", ruta: "/reportes", activo: false },
+    { label: "Perfil", ruta: "/perfil", activo: false },
   ];
 
   return (

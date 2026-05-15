@@ -112,6 +112,7 @@ const NAV = [
     activo: false,
     icono: <IcoReportes />,
   },
+  { label: "Perfil", ruta: "/perfil", activo: false, icono: <IcoUser /> },
 ];
 
 export default function Dashboard() {

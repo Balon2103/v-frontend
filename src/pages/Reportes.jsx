@@ -297,11 +297,12 @@ export default function Reportes() {
         .toUpperCase()
     : "??";
 
-  const NAV = [
+ const NAV = [
     { label: "Inicio", ruta: "/dashboard", activo: false },
     { label: "Vacunas", ruta: "/vacunas", activo: false },
-    { label: "Inventario", ruta: "/inventario", activo: false },
-    { label: "Reportes", ruta: "/reportes", activo: true },
+    { label: "Inventario", ruta: "/inventario", activo: true },
+    { label: "Reportes", ruta: "/reportes", activo: false },
+    { label: "Perfil", ruta: "/perfil", activo: false },
   ];
 
   return (

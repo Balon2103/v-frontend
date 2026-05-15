@@ -359,6 +359,7 @@ export default function Inventario() {
     { label: "Vacunas", ruta: "/vacunas", activo: false },
     { label: "Inventario", ruta: "/inventario", activo: true },
     { label: "Reportes", ruta: "/reportes", activo: false },
+    { label: "Perfil", ruta: "/perfil", activo: false },
   ];
 
   return (
