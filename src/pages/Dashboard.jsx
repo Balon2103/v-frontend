@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
+import logoAsic from "/logo-t.png";
 const STATS = [
   {
     label: "Vacunas del mes",
@@ -190,23 +190,11 @@ export default function Dashboard() {
               className="w-9 h-9 bg-white rounded-lg flex items-center
                             justify-center flex-shrink-0 shadow"
             >
-              <svg
-                className="w-5 h-5 text-blue-600"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0
-                     00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0
-                     00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5
-                     c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782
-                     0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
-                />
-              </svg>
+              <img
+                src={logoAsic}
+                alt="Ministerio de Salud"
+                className="w-full h-full object-contain p-1"
+              />
             </div>
             <div>
               <p className="text-white text-sm font-semibold leading-tight">
