@@ -125,25 +125,23 @@ export default function Login() {
         setError("No se recibió información del usuario.");
         return;
       }
-
       // ─────────────────────────────
       // GUARDAR SESIÓN
       // ─────────────────────────────
 
       localStorage.setItem("token", data.token);
-
       localStorage.setItem("usuario", JSON.stringify(data.user));
-
-      // timestamp login
       localStorage.setItem("loginTime", Date.now().toString());
 
       // ─────────────────────────────
-      // REDIRECCIÓN
+      // TOAST + REDIRECCIÓN
       // ─────────────────────────────
 
-      navigate("/dashboard", {
-        replace: true,
-      });
+      mostrarToast(`¡Bienvenido, ${data.user.nombre?.split(" ")[0] || ""}!`);
+
+      setTimeout(() => {
+        navigate("/dashboard", { replace: true });
+      }, 2000);
     } catch (error) {
       console.error(error);
 
@@ -426,7 +424,62 @@ export default function Login() {
     </div>
   );
 }
+function mostrarToast(msg) {
+  const toast = document.createElement("div");
+  toast.textContent = msg;
+  toast.style.cssText = `
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #ffffff;
+    padding: 12px 24px;
+    border-radius: 99px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    z-index: 9999;
+    opacity: 0;
+    transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    white-space: nowrap;
+  `;
 
+  // Agregar ícono de check
+  toast.innerHTML = `
+    <span style="width:20px;height:20px;background:#22c55e;border-radius:50%;
+                 display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <svg width="11" height="11" fill="none" stroke="white" stroke-width="3"
+           viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+      </svg>
+    </span>
+    ${msg}
+  `;
+
+  document.body.appendChild(toast);
+
+  // Animar entrada
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      toast.style.opacity = "1";
+      toast.style.transform = "translateX(-50%) translateY(0)";
+    });
+  });
+
+  // Animar salida y eliminar
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateX(-50%) translateY(-20px)";
+    setTimeout(() => toast.remove(), 350);
+  }, 2000);
+}
 function IcoOjoVisible() {
   return (
     <svg
