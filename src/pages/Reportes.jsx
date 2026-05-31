@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 // ── Datos de demostración ───────────────────────────────────
 const VACUNAS_POR_MES = {
   "2025-04": [
@@ -282,10 +284,304 @@ export default function Reportes() {
   }, [periodoInv, filtroInvVac, filtroTipo]);
 
   // ── Exportación simulada ────────────────────────────────
-  function exportar(formato) {
-    alert(
-      `Exportando reporte en formato ${formato}.\n\nEsta función se conectará al backend cuando esté disponible.`,
+  // ── Exportar PDF ──────────────────────────────────────────
+  function exportarPDF() {
+    const doc = new jsPDF();
+    const estaEnVacunas = tab === "vacunas";
+
+    // Encabezado azul
+    doc.setFillColor(2, 62, 138);
+    doc.rect(0, 0, 210, 28, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.text("SISTEMA DE VACUNACIÓN", 14, 11);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("ASIC Dr. Tulio Pineda · Municipio Juan Germán Roscio", 14, 18);
+    doc.text(
+      `Generado: ${new Date().toLocaleDateString("es-VE", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      })}`,
+      14,
+      24,
     );
+
+    // Título del reporte
+    doc.setTextColor(2, 62, 138);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+
+    if (estaEnVacunas) {
+      doc.text(
+        `REPORTE DE VACUNAS APLICADAS — ${formatMes(mesVac).toUpperCase()}`,
+        14,
+        38,
+      );
+    } else {
+      const pTexto =
+        periodoInv === "mes"
+          ? "ÚLTIMO MES"
+          : periodoInv === "3meses"
+            ? "ÚLTIMOS 3 MESES"
+            : "TODOS LOS PERÍODOS";
+      doc.text(`REPORTE DE MOVIMIENTOS DE INVENTARIO — ${pTexto}`, 14, 38);
+    }
+
+    // Línea decorativa
+    doc.setDrawColor(0, 119, 182);
+    doc.setLineWidth(0.5);
+    doc.line(14, 41, 196, 41);
+
+    // Tarjetas de resumen
+    if (estaEnVacunas) {
+      const totalDosis = datosVac.reduce((a, r) => a + r.dosis, 0);
+      const totalPacientes = datosVac.reduce((a, r) => a + r.pacientes, 0);
+      const stats = [
+        { label: "Total dosis aplicadas", valor: totalDosis.toString() },
+        { label: "Pacientes atendidos", valor: totalPacientes.toString() },
+        { label: "Tipos de vacuna", valor: datosVac.length.toString() },
+      ];
+      stats.forEach((s, i) => {
+        const x = 14 + i * 62;
+        doc.setFillColor(240, 248, 255);
+        doc.roundedRect(x, 45, 58, 16, 2, 2, "F");
+        doc.setTextColor(2, 62, 138);
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text(s.valor, x + 29, 55, { align: "center" });
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100, 100, 100);
+        doc.text(s.label, x + 29, 59, { align: "center" });
+      });
+
+      // Tabla vacunas
+      autoTable(doc, {
+        startY: 67,
+        head: [
+          ["Vacuna", "Dosis aplicadas", "Pacientes atendidos", "% del total"],
+        ],
+        body: datosVac.map((r) => [
+          r.vacuna,
+          r.dosis.toString(),
+          r.pacientes.toString(),
+          totalDosis > 0
+            ? `${((r.dosis / totalDosis) * 100).toFixed(1)}%`
+            : "—",
+        ]),
+        headStyles: {
+          fillColor: [0, 119, 182],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 9,
+        },
+        bodyStyles: { fontSize: 9, textColor: [55, 65, 81] },
+        alternateRowStyles: { fillColor: [240, 248, 255] },
+        columnStyles: {
+          0: { cellWidth: 75 },
+          1: { cellWidth: 38, halign: "center" },
+          2: { cellWidth: 45, halign: "center" },
+          3: { cellWidth: 30, halign: "center" },
+        },
+        foot: [
+          ["TOTAL", totalDosis.toString(), totalPacientes.toString(), "100%"],
+        ],
+        footStyles: {
+          fillColor: [2, 62, 138],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 9,
+        },
+      });
+    } else {
+      // Inventario
+      const entradas = datosInv
+        .filter((r) => r.tipo === "entrada")
+        .reduce((a, r) => a + r.cantidad, 0);
+      const salidas = datosInv
+        .filter((r) => r.tipo === "salida")
+        .reduce((a, r) => a + r.cantidad, 0);
+      const stats = [
+        { label: "Dosis ingresadas", valor: `+${entradas}` },
+        { label: "Dosis consumidas", valor: `-${salidas}` },
+        {
+          label: "Balance neto",
+          valor: `${entradas - salidas >= 0 ? "+" : ""}${entradas - salidas}`,
+        },
+      ];
+      stats.forEach((s, i) => {
+        const x = 14 + i * 62;
+        doc.setFillColor(240, 248, 255);
+        doc.roundedRect(x, 45, 58, 16, 2, 2, "F");
+        doc.setTextColor(2, 62, 138);
+        doc.setFontSize(13);
+        doc.setFont("helvetica", "bold");
+        doc.text(s.valor, x + 29, 55, { align: "center" });
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100, 100, 100);
+        doc.text(s.label, x + 29, 59, { align: "center" });
+      });
+
+      autoTable(doc, {
+        startY: 67,
+        head: [["Vacuna", "Tipo", "Cantidad", "Lote", "Fecha"]],
+        body: datosInv.map((r) => [
+          r.vacuna,
+          r.tipo === "entrada" ? "↑ Entrada" : "↓ Salida",
+          `${r.tipo === "entrada" ? "+" : "-"}${r.cantidad} dosis`,
+          r.lote,
+          formatFecha(r.fecha),
+        ]),
+        headStyles: {
+          fillColor: [0, 119, 182],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 9,
+        },
+        bodyStyles: { fontSize: 9, textColor: [55, 65, 81] },
+        alternateRowStyles: { fillColor: [240, 248, 255] },
+        columnStyles: {
+          0: { cellWidth: 65 },
+          1: { cellWidth: 28, halign: "center" },
+          2: { cellWidth: 35, halign: "center" },
+          3: { cellWidth: 32, halign: "center" },
+          4: { cellWidth: 28, halign: "center" },
+        },
+      });
+    }
+
+    // Pie de página
+    const totalPags = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPags; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(150, 150, 150);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(14, 286, 196, 286);
+      doc.text(
+        `Sistema de Vacunación ASIC Dr. Tulio Pineda — Página ${i} de ${totalPags}`,
+        105,
+        290,
+        { align: "center" },
+      );
+    }
+
+    // Descargar
+    const nombre = estaEnVacunas
+      ? `reporte_vacunas_${mesVac}.pdf`
+      : `reporte_inventario_${new Date().toISOString().split("T")[0]}.pdf`;
+    doc.save(nombre);
+  }
+
+  // ── Exportar Excel ─────────────────────────────────────────
+  function exportarExcel() {
+    const estaEnVacunas = tab === "vacunas";
+    const wb = XLSX.utils.book_new();
+    const hoy = new Date().toLocaleDateString("es-VE");
+
+    if (estaEnVacunas) {
+      const totalDosis = datosVac.reduce((a, r) => a + r.dosis, 0);
+      const totalPacientes = datosVac.reduce((a, r) => a + r.pacientes, 0);
+
+      const filas = [
+        ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", ""],
+        [`Reporte de vacunas aplicadas — ${formatMes(mesVac)}`, "", "", ""],
+        [`Generado: ${hoy}`, "", "", ""],
+        [],
+        ["VACUNA", "DOSIS APLICADAS", "PACIENTES ATENDIDOS", "% DEL TOTAL"],
+        ...datosVac.map((r) => [
+          r.vacuna,
+          r.dosis,
+          r.pacientes,
+          totalDosis > 0
+            ? `${((r.dosis / totalDosis) * 100).toFixed(1)}%`
+            : "—",
+        ]),
+        [],
+        ["TOTAL", totalDosis, totalPacientes, "100%"],
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(filas);
+      ws["!cols"] = [{ wch: 32 }, { wch: 18 }, { wch: 22 }, { wch: 14 }];
+      ws["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, "Vacunas aplicadas");
+
+      // Hoja resumen
+      const resumen = [
+        ["RESUMEN DEL PERÍODO", ""],
+        [],
+        ["Indicador", "Valor"],
+        ["Período", formatMes(mesVac)],
+        ["Total dosis", totalDosis],
+        ["Total pacientes", totalPacientes],
+        ["Tipos de vacuna", datosVac.length],
+        [
+          "Vacuna más aplicada",
+          [...datosVac].sort((a, b) => b.dosis - a.dosis)[0]?.vacuna || "—",
+        ],
+        ["Fecha de generación", hoy],
+      ];
+      const wsR = XLSX.utils.aoa_to_sheet(resumen);
+      wsR["!cols"] = [{ wch: 24 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, wsR, "Resumen");
+    } else {
+      const entradas = datosInv
+        .filter((r) => r.tipo === "entrada")
+        .reduce((a, r) => a + r.cantidad, 0);
+      const salidas = datosInv
+        .filter((r) => r.tipo === "salida")
+        .reduce((a, r) => a + r.cantidad, 0);
+
+      const filas = [
+        ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", "", ""],
+        ["Reporte de movimientos de inventario", "", "", "", ""],
+        [`Generado: ${hoy}`, "", "", "", ""],
+        [],
+        ["VACUNA", "TIPO", "CANTIDAD", "LOTE", "FECHA"],
+        ...datosInv.map((r) => [
+          r.vacuna,
+          r.tipo === "entrada" ? "Entrada" : "Salida",
+          r.tipo === "entrada" ? r.cantidad : -r.cantidad,
+          r.lote,
+          formatFecha(r.fecha),
+        ]),
+        [],
+        ["RESUMEN", "", "", "", ""],
+        ["Total entradas", entradas, "", "", ""],
+        ["Total salidas", salidas, "", "", ""],
+        ["Balance neto", entradas - salidas, "", "", ""],
+        ["Fecha", hoy, "", "", ""],
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(filas);
+      ws["!cols"] = [
+        { wch: 30 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 16 },
+        { wch: 14 },
+      ];
+      ws["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, "Movimientos inventario");
+    }
+
+    // Descargar
+    const nombre = estaEnVacunas
+      ? `reporte_vacunas_${mesVac}.xlsx`
+      : `reporte_inventario_${new Date().toISOString().split("T")[0]}.xlsx`;
+    XLSX.writeFile(wb, nombre);
   }
 
   const iniciales = usuario?.nombre
@@ -297,7 +593,7 @@ export default function Reportes() {
         .toUpperCase()
     : "??";
 
- const NAV = [
+  const NAV = [
     { label: "Inicio", ruta: "/dashboard", activo: false },
     { label: "Vacunas", ruta: "/vacunas", activo: false },
     { label: "Inventario", ruta: "/inventario", activo: false },
@@ -482,7 +778,7 @@ export default function Reportes() {
                 </select>
                 <div className="flex gap-2 ml-auto">
                   <button
-                    onClick={() => exportar("PDF")}
+                    onClick={exportarPDF}
                     className="flex items-center gap-1.5 px-3 py-2 bg-blue-100
                                hover:bg-blue-200 text-blue-700 font-semibold rounded-xl
                                text-xs transition touch-manipulation"
@@ -490,7 +786,7 @@ export default function Reportes() {
                     <IcoDescargar /> PDF
                   </button>
                   <button
-                    onClick={() => exportar("Excel")}
+                    onClick={exportarExcel}
                     className="flex items-center gap-1.5 px-3 py-2 bg-green-100
                                hover:bg-green-200 text-green-700 font-semibold rounded-xl
                                text-xs transition touch-manipulation"
