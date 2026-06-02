@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
-// ── Catálogo de vacunas ─────────────────────────────────────
+const API = import.meta.env.VITE_API_URL || "";
+const POR_PAGINA = 10;
+
 const TIPOS_VACUNA = [
   { id: 1, nombre: "BCG", dosis: ["Única"] },
   {
@@ -30,7 +32,7 @@ const TIPOS_VACUNA = [
 ];
 
 const BADGE = {
-  BCG: "bg-blue-100 text-blue-700",
+  BCG: "bg-red-100 text-red-700",
   "Polio Inyectable (IPV)": "bg-blue-100 text-blue-700",
   "Polio Oral": "bg-green-100 text-green-700",
   Pentavalente: "bg-pink-100 text-pink-700",
@@ -40,238 +42,82 @@ const BADGE = {
   Toxoide: "bg-gray-100 text-gray-600",
 };
 
-// 20 registros demo para mostrar la paginación
-const DEMO = [
-  {
-    id: 1,
-    cedula: "V-12345678",
-    paciente: "María González",
-    vacuna: "BCG",
-    dosis: "Única",
-    fecha: "2025-04-21",
-    lote: "BCG-001",
-    obs: "",
-  },
-  {
-    id: 2,
-    cedula: "V-87654321",
-    paciente: "Juan Pérez",
-    vacuna: "Pentavalente",
-    dosis: "2da dosis",
-    fecha: "2025-04-20",
-    lote: "PV-042",
-    obs: "",
-  },
-  {
-    id: 3,
-    cedula: "V-11223344",
-    paciente: "Ana Rodríguez",
-    vacuna: "SRP",
-    dosis: "1ra dosis",
-    fecha: "2025-04-19",
-    lote: "SRP-018",
-    obs: "Sin novedades",
-  },
-  {
-    id: 4,
-    cedula: "V-55667788",
-    paciente: "Carlos López",
-    vacuna: "Polio Inyectable (IPV)",
-    dosis: "3ra dosis",
-    fecha: "2025-04-18",
-    lote: "IPV-007",
-    obs: "",
-  },
-  {
-    id: 5,
-    cedula: "V-99001122",
-    paciente: "Luisa Martínez",
-    vacuna: "Fiebre Amarilla",
-    dosis: "Única",
-    fecha: "2025-04-17",
-    lote: "FA-023",
-    obs: "",
-  },
-  {
-    id: 6,
-    cedula: "V-33445566",
-    paciente: "Pedro Ramírez",
-    vacuna: "Hepatitis B",
-    dosis: "1ra dosis",
-    fecha: "2025-04-16",
-    lote: "HB-011",
-    obs: "",
-  },
-  {
-    id: 7,
-    cedula: "V-77889900",
-    paciente: "Carmen Torres",
-    vacuna: "Toxoide",
-    dosis: "Refuerzo",
-    fecha: "2025-04-15",
-    lote: "TX-005",
-    obs: "Paciente embarazada",
-  },
-  {
-    id: 8,
-    cedula: "V-12398765",
-    paciente: "José Hernández",
-    vacuna: "Polio Oral",
-    dosis: "2da dosis",
-    fecha: "2025-04-14",
-    lote: "PO-033",
-    obs: "",
-  },
-  {
-    id: 9,
-    cedula: "V-44556677",
-    paciente: "Rosa Castillo",
-    vacuna: "BCG",
-    dosis: "Única",
-    fecha: "2025-04-13",
-    lote: "BCG-002",
-    obs: "",
-  },
-  {
-    id: 10,
-    cedula: "V-66778899",
-    paciente: "Luis Morales",
-    vacuna: "Pentavalente",
-    dosis: "1ra dosis",
-    fecha: "2025-04-12",
-    lote: "PV-043",
-    obs: "",
-  },
-  {
-    id: 11,
-    cedula: "V-21436587",
-    paciente: "Elena Vargas",
-    vacuna: "SRP",
-    dosis: "2da dosis",
-    fecha: "2025-04-11",
-    lote: "SRP-019",
-    obs: "",
-  },
-  {
-    id: 12,
-    cedula: "V-98765432",
-    paciente: "Marco Díaz",
-    vacuna: "Hepatitis B",
-    dosis: "2da dosis",
-    fecha: "2025-04-10",
-    lote: "HB-012",
-    obs: "",
-  },
-  {
-    id: 13,
-    cedula: "V-13245678",
-    paciente: "Sofía Jiménez",
-    vacuna: "Polio Inyectable (IPV)",
-    dosis: "1ra dosis",
-    fecha: "2025-04-09",
-    lote: "IPV-008",
-    obs: "",
-  },
-  {
-    id: 14,
-    cedula: "V-87612345",
-    paciente: "Daniel Suárez",
-    vacuna: "Toxoide",
-    dosis: "1ra dosis",
-    fecha: "2025-04-08",
-    lote: "TX-006",
-    obs: "",
-  },
-  {
-    id: 15,
-    cedula: "V-11334455",
-    paciente: "Valentina Cruz",
-    vacuna: "Fiebre Amarilla",
-    dosis: "Única",
-    fecha: "2025-04-07",
-    lote: "FA-024",
-    obs: "",
-  },
-  {
-    id: 16,
-    cedula: "V-55443322",
-    paciente: "Roberto Flores",
-    vacuna: "Polio Oral",
-    dosis: "3ra dosis",
-    fecha: "2025-04-06",
-    lote: "PO-034",
-    obs: "",
-  },
-  {
-    id: 17,
-    cedula: "V-99887766",
-    paciente: "Patricia Reyes",
-    vacuna: "BCG",
-    dosis: "Única",
-    fecha: "2025-04-05",
-    lote: "BCG-003",
-    obs: "Recién nacido",
-  },
-  {
-    id: 18,
-    cedula: "V-33221100",
-    paciente: "Andrés Medina",
-    vacuna: "Pentavalente",
-    dosis: "3ra dosis",
-    fecha: "2025-04-04",
-    lote: "PV-044",
-    obs: "",
-  },
-  {
-    id: 19,
-    cedula: "V-77665544",
-    paciente: "Isabel Rojas",
-    vacuna: "SRP",
-    dosis: "1ra dosis",
-    fecha: "2025-04-03",
-    lote: "SRP-020",
-    obs: "",
-  },
-  {
-    id: 20,
-    cedula: "V-12312312",
-    paciente: "Fernando Gómez",
-    vacuna: "Hepatitis B",
-    dosis: "3ra dosis",
-    fecha: "2025-04-02",
-    lote: "HB-013",
-    obs: "Completó esquema",
-  },
-];
-
 const FORM_VACIO = {
   cedula: "",
-  paciente: "",
-  vacuna: "",
+  nombre: "",
+  apellido: "",
+  fecha_nacimiento: "",
+  sexo: "",
+  telefono: "",
+  email: "",
+  direccion: "",
+  tipo_vacuna_id: "",
   dosis: "",
-  fecha: "",
   lote: "",
-  obs: "",
+  fecha_aplicacion: new Date().toISOString().split("T")[0],
+  observaciones: "",
 };
-const POR_PAGINA = 10;
 
-// ── Componente principal ────────────────────────────────────
+function formatFecha(f) {
+  if (!f) return "—";
+  const d = new Date(f);
+  return d.toLocaleDateString("es-VE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+// ── Hook para fetch autenticado ─────────────────────────────
+function useAuth() {
+  const token = localStorage.getItem("token");
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+  return headers;
+}
+
+// ── Componente principal ─────────────────────────────────────
 export default function Vacunas() {
   const navigate = useNavigate();
+  const headers = useAuth();
 
   const [usuario, setUsuario] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [registros, setRegistros] = useState(DEMO);
+
+  // Tabla
+  const [registros, setRegistros] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [pagina, setPagina] = useState(1);
+  const [cargandoTabla, setCargandoTabla] = useState(false);
+
+  // Filtros
   const [busqueda, setBusqueda] = useState("");
   const [filtroVac, setFiltroVac] = useState("");
-  const [pagina, setPagina] = useState(1);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [detalle, setDetalle] = useState(null);
+
+  // Modales
+  const [modalForm, setModalForm] = useState(false);
+  const [modalDetalle, setModalDetalle] = useState(null);
+  const [modalVacunadores, setModalVacunadores] = useState(false);
+
+  // Formulario
   const [form, setForm] = useState(FORM_VACIO);
   const [dosisOpts, setDosisOpts] = useState([]);
-  const [error, setError] = useState("");
-  const [guardado, setGuardado] = useState(false);
+  const [errorForm, setErrorForm] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [okForm, setOkForm] = useState(false);
 
+  // Búsqueda por cédula (autocompletar paciente)
+  const [buscandoPac, setBuscandoPac] = useState(false);
+  const [pacEncontrado, setPacEncontrado] = useState(false);
+
+  // Vacunadores
+  const [vacunadores, setVacunadores] = useState([]);
+  const [cargandoVac, setCargandoVac] = useState(false);
+  const [vacunadorSel, setVacunadorSel] = useState(null);
+
+  // ── Auth guard ────────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem("token");
     const u = localStorage.getItem("usuario");
@@ -290,47 +136,183 @@ export default function Vacunas() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
-  // Actualizar dosis al cambiar vacuna
+  // ── Cargar registros ──────────────────────────────────────
+  const cargarRegistros = useCallback(
+    async (pag = 1) => {
+      setCargandoTabla(true);
+      try {
+        const params = new URLSearchParams({
+          page: pag,
+          limit: POR_PAGINA,
+          ...(busqueda && { cedula: busqueda }),
+          ...(filtroVac && { vacuna: filtroVac }),
+        });
+        const resp = await fetch(`${API}/api/vacunas?${params}`, { headers });
+        const data = await resp.json();
+        if (data.ok) {
+          setRegistros(data.registros);
+          setTotal(data.total);
+          setPagina(pag);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setCargandoTabla(false);
+      }
+    },
+    [busqueda, filtroVac, headers],
+  );
+
   useEffect(() => {
-    const tipo = TIPOS_VACUNA.find((t) => t.nombre === form.vacuna);
+    cargarRegistros(1);
+  }, [busqueda, filtroVac]);
+
+  // ── Dosis según vacuna ────────────────────────────────────
+  useEffect(() => {
+    const tipo = TIPOS_VACUNA.find(
+      (t) => t.id === parseInt(form.tipo_vacuna_id),
+    );
     if (tipo) {
       setDosisOpts(tipo.dosis);
       setForm((f) => ({ ...f, dosis: tipo.dosis[0] }));
     } else {
       setDosisOpts([]);
-      setForm((f) => ({ ...f, dosis: "" }));
     }
-  }, [form.vacuna]);
+  }, [form.tipo_vacuna_id]);
 
-  // Filtrar registros
-  const filtrados = useMemo(() => {
-    return registros.filter((r) => {
-      const q = busqueda.toLowerCase();
-      const matchTexto =
-        r.cedula.toLowerCase().includes(q) ||
-        r.paciente.toLowerCase().includes(q);
-      const matchVac = filtroVac === "" || r.vacuna === filtroVac;
-      return matchTexto && matchVac;
+  // ── Buscar paciente por cédula ────────────────────────────
+  async function buscarPaciente(cedula) {
+    if (cedula.length < 5) {
+      setPacEncontrado(false);
+      return;
+    }
+    setBuscandoPac(true);
+    try {
+      const resp = await fetch(`${API}/api/vacunas/paciente/${cedula}`, {
+        headers,
+      });
+      const data = await resp.json();
+      if (data.ok && data.paciente) {
+        const p = data.paciente;
+        setForm((f) => ({
+          ...f,
+          nombre: p.nombre || "",
+          apellido: p.apellido || "",
+          fecha_nacimiento: p.fecha_nacimiento
+            ? p.fecha_nacimiento.split("T")[0]
+            : "",
+          sexo: p.sexo || "",
+          telefono: p.telefono || "",
+          email: p.email || "",
+          direccion: p.direccion || "",
+        }));
+        setPacEncontrado(true);
+      } else {
+        setPacEncontrado(false);
+      }
+    } catch {
+      setPacEncontrado(false);
+    } finally {
+      setBuscandoPac(false);
+    }
+  }
+
+  // ── Abrir/cerrar modal formulario ─────────────────────────
+  function abrirForm() {
+    setForm({
+      ...FORM_VACIO,
+      fecha_aplicacion: new Date().toISOString().split("T")[0],
     });
-  }, [registros, busqueda, filtroVac]);
+    setErrorForm("");
+    setOkForm(false);
+    setPacEncontrado(false);
+    setModalForm(true);
+  }
 
-  // Resetear página al filtrar
-  useEffect(() => {
-    setPagina(1);
-  }, [busqueda, filtroVac]);
+  function handleFormChange(campo, valor) {
+    setForm((f) => ({ ...f, [campo]: valor }));
+    if (campo === "cedula") {
+      setPacEncontrado(false);
+      buscarPaciente(valor);
+    }
+  }
 
-  // Paginación
-  const totalPaginas = Math.ceil(filtrados.length / POR_PAGINA);
-  const paginaActual = Math.min(pagina, totalPaginas || 1);
-  const inicio = (paginaActual - 1) * POR_PAGINA;
-  const registrosPag = filtrados.slice(inicio, inicio + POR_PAGINA);
+  // ── Guardar vacuna ────────────────────────────────────────
+  async function guardarVacuna(e) {
+    e.preventDefault();
+    setErrorForm("");
 
-  // Números de página a mostrar (máx 5)
+    const {
+      cedula,
+      nombre,
+      apellido,
+      tipo_vacuna_id,
+      dosis,
+      fecha_aplicacion,
+    } = form;
+    if (
+      !cedula ||
+      !nombre ||
+      !apellido ||
+      !tipo_vacuna_id ||
+      !dosis ||
+      !fecha_aplicacion
+    ) {
+      setErrorForm(
+        "Complete los campos obligatorios: cédula, nombre, apellido, vacuna, dosis y fecha.",
+      );
+      return;
+    }
+
+    setGuardando(true);
+    try {
+      const resp = await fetch(`${API}/api/vacunas`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(form),
+      });
+      const data = await resp.json();
+
+      if (data.ok) {
+        setOkForm(true);
+        setTimeout(() => {
+          setModalForm(false);
+          setOkForm(false);
+          cargarRegistros(1);
+        }, 1200);
+      } else {
+        setErrorForm(data.mensaje || "Error al guardar el registro.");
+      }
+    } catch {
+      setErrorForm("No se pudo conectar con el servidor.");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  // ── Cargar vacunadores ────────────────────────────────────
+  async function abrirVacunadores() {
+    setModalVacunadores(true);
+    setVacunadorSel(null);
+    setCargandoVac(true);
+    try {
+      const resp = await fetch(`${API}/api/vacunas/vacunadores`, { headers });
+      const data = await resp.json();
+      if (data.ok) setVacunadores(data.vacunadores);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCargandoVac(false);
+    }
+  }
+
+  // ── Paginación ────────────────────────────────────────────
+  const totalPaginas = Math.ceil(total / POR_PAGINA);
   const paginas = useMemo(() => {
     if (totalPaginas <= 5)
       return Array.from({ length: totalPaginas }, (_, i) => i + 1);
-    if (paginaActual <= 3) return [1, 2, 3, 4, 5];
-    if (paginaActual >= totalPaginas - 2)
+    if (pagina <= 3) return [1, 2, 3, 4, 5];
+    if (pagina >= totalPaginas - 2)
       return [
         totalPaginas - 4,
         totalPaginas - 3,
@@ -338,74 +320,8 @@ export default function Vacunas() {
         totalPaginas - 1,
         totalPaginas,
       ];
-    return [
-      paginaActual - 2,
-      paginaActual - 1,
-      paginaActual,
-      paginaActual + 1,
-      paginaActual + 2,
-    ];
-  }, [totalPaginas, paginaActual]);
-
-  function abrirModal() {
-    setForm({ ...FORM_VACIO, fecha: new Date().toISOString().split("T")[0] });
-    setError("");
-    setGuardado(false);
-    setDetalle(null);
-    setModalOpen(true);
-  }
-
-  function verDetalle(reg) {
-    setDetalle(reg);
-    setModalOpen(true);
-  }
-
-  function cerrarModal() {
-    setModalOpen(false);
-    setDetalle(null);
-    setError("");
-  }
-
-  function handleForm(campo, valor) {
-    setForm((f) => ({ ...f, [campo]: valor }));
-  }
-
-  function guardar(e) {
-    e.preventDefault();
-    setError("");
-    if (
-      !form.cedula ||
-      !form.paciente ||
-      !form.vacuna ||
-      !form.dosis ||
-      !form.fecha
-    ) {
-      setError("Por favor complete todos los campos obligatorios.");
-      return;
-    }
-    const nuevo = {
-      id: registros.length + 1,
-      cedula: form.cedula.trim(),
-      paciente: form.paciente.trim(),
-      vacuna: form.vacuna,
-      dosis: form.dosis,
-      fecha: form.fecha,
-      lote: form.lote.trim(),
-      obs: form.obs.trim(),
-    };
-    setRegistros((prev) => [nuevo, ...prev]);
-    setGuardado(true);
-    setTimeout(() => {
-      setModalOpen(false);
-      setGuardado(false);
-    }, 1200);
-  }
-
-  function formatFecha(f) {
-    if (!f) return "—";
-    const [y, m, d] = f.split("-");
-    return `${d}/${m}/${y}`;
-  }
+    return [pagina - 2, pagina - 1, pagina, pagina + 1, pagina + 2];
+  }, [totalPaginas, pagina]);
 
   const iniciales = usuario?.nombre
     ? usuario.nombre
@@ -426,7 +342,6 @@ export default function Vacunas() {
 
   return (
     <div className="min-h-screen flex bg-blue-50">
-      {/* Overlay móvil */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -441,33 +356,24 @@ export default function Vacunas() {
                         ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
                         lg:translate-x-0 lg:w-60`}
       >
-        <div
-          className="flex items-center justify-between px-4 py-5
-                        border-b border-white/10"
-        >
+        <div className="flex items-center justify-between px-4 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 bg-white rounded-lg flex items-center
-                            justify-center flex-shrink-0 shadow"
-            >
+            <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shadow">
               <IcoJeringa className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-white text-sm font-semibold leading-tight">
-                Vacunación
-              </p>
+              <p className="text-white text-sm font-semibold">Vacunación</p>
               <p className="text-blue-300 text-xs">ASIC Dr. Tulio Pineda</p>
             </div>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden text-white/50 hover:text-white p-1 transition"
+            className="lg:hidden text-white/50 hover:text-white p-1"
           >
             <IcoCerrar />
           </button>
         </div>
-
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
           {NAV.map((item) => (
             <button
               key={item.label}
@@ -477,18 +383,14 @@ export default function Vacunas() {
               }}
               className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg
                          text-sm font-medium transition text-left touch-manipulation
-                         ${
-                           item.activo
-                             ? "bg-white/15 text-white"
-                             : "text-white/55 hover:bg-white/10 hover:text-white"
-                         }`}
+                         ${item.activo ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"}`}
             >
               <span className="w-5 h-5 flex-shrink-0">
                 {item.label === "Inicio" && <IcoHome />}
                 {item.label === "Vacunas" && <IcoVacuna />}
                 {item.label === "Inventario" && <IcoStock />}
                 {item.label === "Reportes" && <IcoReportes />}
-                {item.label === "Perfil" && <IcoUser />}
+                {item.label === "Perfil" && <IcoPerfil />}
               </span>
               {item.label}
               {item.activo && (
@@ -497,7 +399,6 @@ export default function Vacunas() {
             </button>
           ))}
         </nav>
-
         <div className="border-t border-white/10 px-4 py-4">
           <div className="flex items-center gap-3">
             <div
@@ -508,7 +409,7 @@ export default function Vacunas() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-white text-sm font-medium truncate">
-                {usuario?.nombre || "..."}
+                {usuario?.nombre}
               </p>
               <p className="text-blue-300 text-xs capitalize">{usuario?.rol}</p>
             </div>
@@ -517,7 +418,7 @@ export default function Vacunas() {
                 localStorage.clear();
                 navigate("/login");
               }}
-              className="text-white/40 hover:text-blue-300 transition p-1 flex-shrink-0"
+              className="text-white/40 hover:text-blue-300 transition p-1"
             >
               <IcoSalir />
             </button>
@@ -527,11 +428,9 @@ export default function Vacunas() {
 
       {/* ── Contenido ───────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 lg:ml-60">
-        {/* Topbar móvil */}
         <header
-          className="lg:hidden sticky top-0 z-10 bg-blue-900
-                           border-b border-white/10 px-4 py-3
-                           flex items-center justify-between"
+          className="lg:hidden sticky top-0 z-10 bg-blue-900 border-b border-white/10
+                           px-4 py-3 flex items-center justify-between"
         >
           <button
             onClick={() => setSidebarOpen(true)}
@@ -544,7 +443,7 @@ export default function Vacunas() {
           </span>
           <div
             className="w-9 h-9 bg-white rounded-full flex items-center
-                          justify-center text-blue-600 font-bold text-xs flex-shrink-0"
+                          justify-center text-blue-600 font-bold text-xs"
           >
             {iniciales}
           </div>
@@ -552,44 +451,55 @@ export default function Vacunas() {
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
           {/* Encabezado */}
-          <div
-            className="flex flex-col sm:flex-row sm:items-center
-                          sm:justify-between gap-3 mb-6"
-          >
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
             <div>
               <h1 className="text-xl sm:text-2xl font-bold text-blue-900">
                 Vacunas aplicadas
               </h1>
               <p className="text-xs sm:text-sm text-blue-400 mt-0.5">
-                {filtrados.length} registro{filtrados.length !== 1 ? "s" : ""}{" "}
-                encontrado{filtrados.length !== 1 ? "s" : ""}
+                {total} registro{total !== 1 ? "s" : ""} en total
               </p>
             </div>
-            <button
-              onClick={abrirModal}
-              className="flex items-center justify-center gap-2 bg-blue-600
-                         hover:bg-blue-700 active:scale-[0.98] text-white font-semibold
-                         px-4 py-2.5 rounded-xl text-sm transition-all
-                         shadow-md shadow-blue-200 touch-manipulation self-start sm:self-auto"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.5}
-                viewBox="0 0 24 24"
+            <div className="flex gap-2 flex-wrap">
+              {/* Botón vacunadores */}
+              <button
+                onClick={abrirVacunadores}
+                className="flex items-center gap-2 bg-white hover:bg-blue-50
+                           border border-blue-200 text-blue-700 font-semibold
+                           px-4 py-2.5 rounded-xl text-sm transition
+                           active:scale-[0.98] touch-manipulation shadow-sm"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-              Nueva vacuna
-            </button>
+                <IcoPersonas />
+                <span className="hidden sm:inline">Vacunadores</span>
+                <span className="sm:hidden">Equipo</span>
+              </button>
+              {/* Botón nueva vacuna */}
+              <button
+                onClick={abrirForm}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700
+                           text-white font-semibold px-4 py-2.5 rounded-xl text-sm
+                           transition active:scale-[0.98] touch-manipulation
+                           shadow-md shadow-blue-200"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                Nueva vacuna
+              </button>
+            </div>
           </div>
 
-          {/* Buscador + filtro */}
+          {/* Filtros */}
           <div className="flex flex-col sm:flex-row gap-3 mb-5">
             <div className="relative flex-1">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300">
@@ -619,8 +529,7 @@ export default function Vacunas() {
               {busqueda && (
                 <button
                   onClick={() => setBusqueda("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2
-                             text-gray-400 hover:text-gray-600 transition"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   <IcoCerrar />
                 </button>
@@ -629,9 +538,8 @@ export default function Vacunas() {
             <select
               value={filtroVac}
               onChange={(e) => setFiltroVac(e.target.value)}
-              className="px-3 py-2.5 bg-white border border-blue-200 rounded-xl
-                         text-sm focus:outline-none focus:ring-2 focus:ring-blue-400
-                         text-gray-700 transition sm:w-52"
+              className="px-3 py-2.5 bg-white border border-blue-200 rounded-xl text-sm
+                         focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 sm:w-52"
             >
               <option value="">Todas las vacunas</option>
               {TIPOS_VACUNA.map((t) => (
@@ -653,14 +561,14 @@ export default function Vacunas() {
                       "Cédula",
                       "Vacuna",
                       "Dosis",
-                      "Fecha aplic.",
-                      "Lote",
+                      "Fecha",
+                      "Vacunador",
                       "",
                     ].map((h) => (
                       <th
                         key={h}
                         className="text-left px-4 py-3 text-xs font-semibold
-                                   text-blue-400 uppercase tracking-wider whitespace-nowrap"
+                                             text-blue-400 uppercase tracking-wider whitespace-nowrap"
                       >
                         {h}
                       </th>
@@ -668,17 +576,26 @@ export default function Vacunas() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-blue-50">
-                  {registrosPag.length === 0 ? (
+                  {cargandoTabla ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-10 text-center">
+                        <span
+                          className="inline-block w-6 h-6 border-2 border-blue-300
+                                       border-t-blue-600 rounded-full animate-spin"
+                        />
+                      </td>
+                    </tr>
+                  ) : registros.length === 0 ? (
                     <tr>
                       <td
                         colSpan={7}
-                        className="px-4 py-12 text-center text-gray-400 text-sm"
+                        className="px-4 py-10 text-center text-gray-400 text-sm"
                       >
                         No se encontraron registros.
                       </td>
                     </tr>
                   ) : (
-                    registrosPag.map((r) => (
+                    registros.map((r) => (
                       <tr
                         key={r.id}
                         className="hover:bg-blue-50/40 transition group"
@@ -686,34 +603,31 @@ export default function Vacunas() {
                         <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
                           {r.paciente}
                         </td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
+                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                           {r.cedula}
                         </td>
                         <td className="px-4 py-3">
                           <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-semibold
-                                         whitespace-nowrap
-                                         ${BADGE[r.vacuna] || "bg-gray-100 text-gray-600"}`}
+                            className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap
+                          ${BADGE[r.vacuna] || "bg-gray-100 text-gray-600"}`}
                           >
                             {r.vacuna}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+                        <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
                           {r.dosis}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+                        <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
                           {formatFecha(r.fecha)}
                         </td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
-                          {r.lote || "—"}
+                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                          {r.vacunador}
                         </td>
                         <td className="px-4 py-3">
                           <button
-                            onClick={() => verDetalle(r)}
-                            className="text-blue-600 hover:text-blue-800 text-xs
-                                     font-medium hover:underline transition
-                                     whitespace-nowrap opacity-70
-                                     group-hover:opacity-100"
+                            onClick={() => setModalDetalle(r)}
+                            className="text-blue-600 hover:text-blue-800 text-xs font-medium
+                                     hover:underline transition opacity-70 group-hover:opacity-100"
                           >
                             Ver detalle
                           </button>
@@ -725,37 +639,25 @@ export default function Vacunas() {
               </table>
             </div>
 
-            {/* ── Paginación ─────────────────────────────── */}
+            {/* Paginación */}
             <div
               className="px-4 py-3 border-t border-blue-50 bg-blue-50/30
-                            flex flex-col sm:flex-row items-center
-                            justify-between gap-3"
+                            flex flex-col sm:flex-row items-center justify-between gap-3"
             >
-              {/* Info */}
               <p className="text-xs text-gray-400 order-2 sm:order-1">
                 Mostrando{" "}
                 <span className="font-semibold text-gray-600">
-                  {filtrados.length === 0 ? 0 : inicio + 1}–
-                  {Math.min(inicio + POR_PAGINA, filtrados.length)}
+                  {total === 0 ? 0 : (pagina - 1) * POR_PAGINA + 1}–
+                  {Math.min(pagina * POR_PAGINA, total)}
                 </span>{" "}
-                de{" "}
-                <span className="font-semibold text-gray-600">
-                  {filtrados.length}
-                </span>{" "}
+                de <span className="font-semibold text-gray-600">{total}</span>{" "}
                 registros
               </p>
-
-              {/* Controles */}
               {totalPaginas > 1 && (
                 <div className="flex items-center gap-1 order-1 sm:order-2">
-                  {/* Anterior */}
-                  <button
-                    onClick={() => setPagina((p) => Math.max(1, p - 1))}
-                    disabled={paginaActual === 1}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg
-                               border border-blue-200 bg-white text-blue-500
-                               hover:bg-blue-50 disabled:opacity-40
-                               disabled:cursor-not-allowed transition text-sm"
+                  <BtnPag
+                    onClick={() => cargarRegistros(Math.max(1, pagina - 1))}
+                    disabled={pagina === 1}
                   >
                     <svg
                       className="w-4 h-4"
@@ -770,17 +672,15 @@ export default function Vacunas() {
                         d="M15 19l-7-7 7-7"
                       />
                     </svg>
-                  </button>
-
-                  {/* Números */}
+                  </BtnPag>
                   {paginas.map((n) => (
                     <button
                       key={n}
-                      onClick={() => setPagina(n)}
-                      className={`w-8 h-8 flex items-center justify-center rounded-lg
-                                 text-xs font-semibold transition border
+                      onClick={() => cargarRegistros(n)}
+                      className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs
+                                 font-semibold transition border
                                  ${
-                                   n === paginaActual
+                                   n === pagina
                                      ? "bg-blue-600 text-white border-blue-600 shadow-sm"
                                      : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"
                                  }`}
@@ -788,17 +688,11 @@ export default function Vacunas() {
                       {n}
                     </button>
                   ))}
-
-                  {/* Siguiente */}
-                  <button
+                  <BtnPag
                     onClick={() =>
-                      setPagina((p) => Math.min(totalPaginas, p + 1))
+                      cargarRegistros(Math.min(totalPaginas, pagina + 1))
                     }
-                    disabled={paginaActual === totalPaginas}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg
-                               border border-blue-200 bg-white text-blue-500
-                               hover:bg-blue-50 disabled:opacity-40
-                               disabled:cursor-not-allowed transition text-sm"
+                    disabled={pagina === totalPaginas}
                   >
                     <svg
                       className="w-4 h-4"
@@ -813,7 +707,7 @@ export default function Vacunas() {
                         d="M9 5l7 7-7 7"
                       />
                     </svg>
-                  </button>
+                  </BtnPag>
                 </div>
               )}
             </div>
@@ -821,114 +715,220 @@ export default function Vacunas() {
         </main>
       </div>
 
-      {/* ── Modal ───────────────────────────────────────── */}
-      {modalOpen && (
+      {/* ══ MODAL: Registrar vacuna ══════════════════════ */}
+      {modalForm && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-center
-                        justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
           onClick={(e) => {
-            if (e.target === e.currentTarget) cerrarModal();
+            if (e.target === e.currentTarget) setModalForm(false);
           }}
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg
-                          max-h-[90vh] overflow-y-auto"
-          >
-            {/* Header modal */}
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div
               className="flex items-center justify-between px-6 py-4
                             border-b border-blue-100 sticky top-0 bg-white z-10"
             >
               <h3 className="text-base font-semibold text-blue-900">
-                {detalle ? "Detalle del registro" : "Registrar vacuna aplicada"}
+                Registrar vacuna aplicada
               </h3>
               <button
-                onClick={cerrarModal}
-                className="text-gray-400 hover:text-gray-600 transition p-1
-                           touch-manipulation"
+                onClick={() => setModalForm(false)}
+                className="text-gray-400 hover:text-gray-600 transition p-1"
               >
                 <IcoCerrar />
               </button>
             </div>
 
-            {/* Vista detalle */}
-            {detalle ? (
-              <div className="px-6 py-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                  <Campo label="Paciente" valor={detalle.paciente} />
-                  <Campo label="Cédula" valor={detalle.cedula} />
-                  <Campo
-                    label="Vacuna"
-                    valor={
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-semibold
-                                     ${BADGE[detalle.vacuna] || ""}`}
-                      >
-                        {detalle.vacuna}
-                      </span>
-                    }
-                  />
-                  <Campo label="Dosis" valor={detalle.dosis} />
-                  <Campo label="Fecha" valor={formatFecha(detalle.fecha)} />
-                  <Campo label="Lote" valor={detalle.lote || "—"} />
-                </div>
-                <Campo
-                  label="Observaciones"
-                  valor={detalle.obs || "Sin observaciones"}
-                />
-                <button
-                  onClick={cerrarModal}
-                  className="w-full mt-5 bg-blue-600 hover:bg-blue-700 text-white
-                             font-semibold py-2.5 rounded-xl text-sm transition
-                             touch-manipulation"
-                >
-                  Cerrar
-                </button>
-              </div>
-            ) : (
-              /* Formulario */
-              <form onSubmit={guardar} noValidate>
-                <div className="px-6 py-5 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField label="Cédula del paciente *">
+            <form onSubmit={guardarVacuna} noValidate>
+              <div className="px-6 py-5 space-y-5">
+                {/* Sección: datos del paciente */}
+                <div>
+                  <h4
+                    className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3
+                                 flex items-center gap-2"
+                  >
+                    <span
+                      className="w-5 h-5 bg-blue-100 rounded-full flex items-center
+                                     justify-center text-blue-600 font-bold text-xs"
+                    >
+                      1
+                    </span>
+                    Datos del paciente
+                  </h4>
+
+                  {/* Cédula con búsqueda */}
+                  <div className="mb-3">
+                    <label className={labelCls}>Cédula *</label>
+                    <div className="relative">
                       <input
                         type="text"
                         value={form.cedula}
-                        onChange={(e) => handleForm("cedula", e.target.value)}
-                        placeholder="Ej: V-12345678"
+                        onChange={(e) =>
+                          handleFormChange("cedula", e.target.value)
+                        }
+                        placeholder="V-12345678"
                         className={inputCls}
                       />
-                    </FormField>
-                    <FormField label="Nombre del paciente *">
-                      <input
-                        type="text"
-                        value={form.paciente}
-                        onChange={(e) => handleForm("paciente", e.target.value)}
-                        placeholder="Nombre completo"
-                        className={inputCls}
-                      />
-                    </FormField>
+                      {buscandoPac && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <span
+                            className="w-4 h-4 border-2 border-blue-300 border-t-blue-600
+                                           rounded-full animate-spin inline-block"
+                          />
+                        </span>
+                      )}
+                    </div>
+                    {pacEncontrado && (
+                      <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                        <svg
+                          className="w-3 h-3"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        Paciente encontrado — datos cargados automáticamente
+                      </p>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField label="Tipo de vacuna *">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Nombre *</label>
+                      <input
+                        type="text"
+                        value={form.nombre}
+                        onChange={(e) =>
+                          handleFormChange("nombre", e.target.value)
+                        }
+                        placeholder="Nombre"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Apellido *</label>
+                      <input
+                        type="text"
+                        value={form.apellido}
+                        onChange={(e) =>
+                          handleFormChange("apellido", e.target.value)
+                        }
+                        placeholder="Apellido"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Fecha de nacimiento</label>
+                      <input
+                        type="date"
+                        value={form.fecha_nacimiento}
+                        onChange={(e) =>
+                          handleFormChange("fecha_nacimiento", e.target.value)
+                        }
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Sexo</label>
                       <select
-                        value={form.vacuna}
-                        onChange={(e) => handleForm("vacuna", e.target.value)}
+                        value={form.sexo}
+                        onChange={(e) =>
+                          handleFormChange("sexo", e.target.value)
+                        }
+                        className={inputCls}
+                      >
+                        <option value="">Seleccionar...</option>
+                        <option value="M">Masculino</option>
+                        <option value="F">Femenino</option>
+                        <option value="Otro">Otro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Teléfono</label>
+                      <input
+                        type="tel"
+                        value={form.telefono}
+                        onChange={(e) =>
+                          handleFormChange("telefono", e.target.value)
+                        }
+                        placeholder="0412-0000000"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Correo electrónico</label>
+                      <input
+                        type="email"
+                        value={form.email}
+                        onChange={(e) =>
+                          handleFormChange("email", e.target.value)
+                        }
+                        placeholder="correo@ejemplo.com"
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className={labelCls}>Dirección</label>
+                    <textarea
+                      value={form.direccion}
+                      onChange={(e) =>
+                        handleFormChange("direccion", e.target.value)
+                      }
+                      placeholder="Dirección del paciente..."
+                      rows={2}
+                      className={`${inputCls} resize-none`}
+                    />
+                  </div>
+                </div>
+
+                {/* Sección: datos de la vacuna */}
+                <div>
+                  <h4
+                    className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3
+                                 flex items-center gap-2"
+                  >
+                    <span
+                      className="w-5 h-5 bg-blue-100 rounded-full flex items-center
+                                     justify-center text-blue-600 font-bold text-xs"
+                    >
+                      2
+                    </span>
+                    Datos de la vacuna
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Tipo de vacuna *</label>
+                      <select
+                        value={form.tipo_vacuna_id}
+                        onChange={(e) =>
+                          handleFormChange("tipo_vacuna_id", e.target.value)
+                        }
                         className={inputCls}
                       >
                         <option value="">Seleccionar...</option>
                         {TIPOS_VACUNA.map((t) => (
-                          <option key={t.id} value={t.nombre}>
+                          <option key={t.id} value={t.id}>
                             {t.nombre}
                           </option>
                         ))}
                       </select>
-                    </FormField>
-                    <FormField label="Número de dosis *">
+                    </div>
+                    <div>
+                      <label className={labelCls}>Número de dosis *</label>
                       <select
                         value={form.dosis}
-                        onChange={(e) => handleForm("dosis", e.target.value)}
+                        onChange={(e) =>
+                          handleFormChange("dosis", e.target.value)
+                        }
                         disabled={dosisOpts.length === 0}
                         className={`${inputCls} disabled:opacity-50`}
                       >
@@ -942,93 +942,433 @@ export default function Vacunas() {
                           ))
                         )}
                       </select>
-                    </FormField>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField label="Fecha de aplicación *">
+                    </div>
+                    <div>
+                      <label className={labelCls}>Fecha de aplicación *</label>
                       <input
                         type="date"
-                        value={form.fecha}
-                        onChange={(e) => handleForm("fecha", e.target.value)}
+                        value={form.fecha_aplicacion}
+                        onChange={(e) =>
+                          handleFormChange("fecha_aplicacion", e.target.value)
+                        }
                         max={new Date().toISOString().split("T")[0]}
                         className={inputCls}
                       />
-                    </FormField>
-                    <FormField label="Número de lote">
+                    </div>
+                    <div>
+                      <label className={labelCls}>Número de lote</label>
                       <input
                         type="text"
                         value={form.lote}
-                        onChange={(e) => handleForm("lote", e.target.value)}
+                        onChange={(e) =>
+                          handleFormChange("lote", e.target.value)
+                        }
                         placeholder="Ej: BCG-001"
                         className={inputCls}
                       />
-                    </FormField>
+                    </div>
                   </div>
 
-                  <FormField label="Observaciones">
+                  <div className="mt-3">
+                    <label className={labelCls}>Observaciones</label>
                     <textarea
-                      value={form.obs}
-                      onChange={(e) => handleForm("obs", e.target.value)}
+                      value={form.observaciones}
+                      onChange={(e) =>
+                        handleFormChange("observaciones", e.target.value)
+                      }
                       placeholder="Opcional..."
                       rows={2}
                       className={`${inputCls} resize-none`}
                     />
-                  </FormField>
+                  </div>
+                </div>
 
-                  {error && (
-                    <div
-                      className="px-4 py-3 bg-blue-50 border border-blue-200
-                                    rounded-xl text-sm text-blue-600"
+                {errorForm && (
+                  <div
+                    className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl
+                                  text-sm text-red-600"
+                  >
+                    {errorForm}
+                  </div>
+                )}
+                {okForm && (
+                  <div
+                    className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl
+                                  text-sm text-green-700 font-medium flex items-center gap-2"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                      viewBox="0 0 24 24"
                     >
-                      {error}
-                    </div>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                    Vacuna registrada correctamente
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 px-6 pb-6">
+                <button
+                  type="button"
+                  onClick={() => setModalForm(false)}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm
+                             font-medium text-gray-600 hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardando}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
+                             text-white font-semibold py-2.5 rounded-xl text-sm
+                             transition active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  {guardando ? (
+                    <>
+                      <span
+                        className="w-4 h-4 border-2 border-white/30 border-t-white
+                                       rounded-full animate-spin"
+                      />
+                      Guardando...
+                    </>
+                  ) : (
+                    "Guardar registro"
                   )}
-                  {guardado && (
-                    <div
-                      className="px-4 py-3 bg-green-50 border border-green-200
-                                    rounded-xl text-sm text-green-700 font-medium
-                                    flex items-center gap-2"
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: Detalle de vacuna ═════════════════════ */}
+      {modalDetalle && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setModalDetalle(null);
+          }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-blue-100">
+              <h3 className="text-base font-semibold text-blue-900">
+                Detalle del registro
+              </h3>
+              <button
+                onClick={() => setModalDetalle(null)}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                <IcoCerrar />
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <Campo label="Paciente" valor={modalDetalle.paciente} />
+                <Campo label="Cédula" valor={modalDetalle.cedula} />
+                <Campo
+                  label="Vacuna"
+                  valor={
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold
+                    ${BADGE[modalDetalle.vacuna] || ""}`}
                     >
-                      <svg
-                        className="w-4 h-4 flex-shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2.5}
-                        viewBox="0 0 24 24"
+                      {modalDetalle.vacuna}
+                    </span>
+                  }
+                />
+                <Campo label="Dosis" valor={modalDetalle.dosis} />
+                <Campo label="Fecha" valor={formatFecha(modalDetalle.fecha)} />
+                <Campo label="Lote" valor={modalDetalle.lote || "—"} />
+                <Campo label="Vacunador" valor={modalDetalle.vacunador} />
+                {modalDetalle.telefono && (
+                  <Campo label="Teléfono" valor={modalDetalle.telefono} />
+                )}
+                {modalDetalle.email && (
+                  <Campo label="Email" valor={modalDetalle.email} />
+                )}
+              </div>
+              {modalDetalle.observaciones && (
+                <Campo
+                  label="Observaciones"
+                  valor={modalDetalle.observaciones}
+                />
+              )}
+              <button
+                onClick={() => setModalDetalle(null)}
+                className="w-full mt-5 bg-blue-600 hover:bg-blue-700 text-white
+                           font-semibold py-2.5 rounded-xl text-sm transition"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: Vacunadores ═══════════════════════════ */}
+      {modalVacunadores && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setModalVacunadores(false);
+              setVacunadorSel(null);
+            }
+          }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-blue-100 sticky top-0 bg-white z-10">
+              <div>
+                <h3 className="text-base font-semibold text-blue-900">
+                  {vacunadorSel
+                    ? `Record de ${vacunadorSel.nombre}`
+                    : "Equipo de vacunadores"}
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {vacunadorSel
+                    ? "Detalle de su actividad"
+                    : `${vacunadores.length} vacunadores registrados`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {vacunadorSel && (
+                  <button
+                    onClick={() => setVacunadorSel(null)}
+                    className="text-blue-600 hover:text-blue-800 text-sm font-medium
+                               flex items-center gap-1 transition"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15 19l-7-7 7-7"
+                      />
+                    </svg>
+                    Volver
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setModalVacunadores(false);
+                    setVacunadorSel(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <IcoCerrar />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-5">
+              {cargandoVac ? (
+                <div className="flex items-center justify-center py-12">
+                  <span
+                    className="w-8 h-8 border-2 border-blue-300 border-t-blue-600
+                                   rounded-full animate-spin"
+                  />
+                </div>
+              ) : !vacunadorSel ? (
+                /* Lista de vacunadores */
+                <div className="space-y-3">
+                  {vacunadores.length === 0 ? (
+                    <p className="text-center text-gray-400 py-8">
+                      No hay vacunadores registrados.
+                    </p>
+                  ) : (
+                    vacunadores.map((v) => (
+                      <button
+                        key={v.id}
+                        onClick={() => setVacunadorSel(v)}
+                        className="w-full bg-blue-50 hover:bg-blue-100 border border-blue-100
+                                 hover:border-blue-300 rounded-2xl p-4 text-left transition
+                                 active:scale-[0.99] group"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      Registro guardado correctamente
+                        <div className="flex items-center gap-4">
+                          <div
+                            className="w-12 h-12 bg-blue-600 rounded-full flex items-center
+                                        justify-center text-white font-bold text-sm flex-shrink-0"
+                          >
+                            {v.nombre
+                              .split(" ")
+                              .map((p) => p[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-800">
+                              {v.nombre}
+                            </p>
+                            <p className="text-xs text-gray-500 capitalize">
+                              {v.rol} · {v.email}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-2xl font-bold text-blue-600">
+                              {v.total_vacunas}
+                            </p>
+                            <p className="text-xs text-gray-400">vacunas</p>
+                          </div>
+                          <svg
+                            className="w-5 h-5 text-gray-300 group-hover:text-blue-400
+                                        transition flex-shrink-0"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                        </div>
+                        <div className="flex gap-4 mt-3 pt-3 border-t border-blue-100">
+                          <div className="text-center">
+                            <p className="text-sm font-semibold text-gray-700">
+                              {v.total_pacientes}
+                            </p>
+                            <p className="text-xs text-gray-400">pacientes</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-semibold text-gray-700">
+                              {v.ultima_aplicacion
+                                ? formatFecha(v.ultima_aplicacion)
+                                : "—"}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              última aplicación
+                            </p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-semibold text-gray-700">
+                              {v.primera_aplicacion
+                                ? formatFecha(v.primera_aplicacion)
+                                : "—"}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              primera aplicación
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : (
+                /* Detalle de un vacunador */
+                <div>
+                  {/* Tarjeta resumen */}
+                  <div className="bg-blue-50 rounded-2xl p-5 mb-5 flex items-center gap-4">
+                    <div
+                      className="w-14 h-14 bg-blue-600 rounded-full flex items-center
+                                    justify-center text-white font-bold text-xl flex-shrink-0"
+                    >
+                      {vacunadorSel.nombre
+                        .split(" ")
+                        .map((p) => p[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-gray-800 text-base">
+                        {vacunadorSel.nombre}
+                      </h4>
+                      <p className="text-sm text-gray-500 capitalize">
+                        {vacunadorSel.rol}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {vacunadorSel.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-3 mb-5">
+                    <div className="bg-white border border-blue-100 rounded-xl p-3 text-center">
+                      <p className="text-2xl font-bold text-blue-600">
+                        {vacunadorSel.total_vacunas}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Total vacunas
+                      </p>
+                    </div>
+                    <div className="bg-white border border-blue-100 rounded-xl p-3 text-center">
+                      <p className="text-2xl font-bold text-blue-600">
+                        {vacunadorSel.total_pacientes}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Pacientes atendidos
+                      </p>
+                    </div>
+                    <div className="bg-white border border-blue-100 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-blue-600">
+                        {vacunadorSel.ultima_aplicacion
+                          ? formatFecha(vacunadorSel.ultima_aplicacion)
+                          : "—"}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Última aplicación
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Detalle por vacuna */}
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+                    Distribución por tipo de vacuna
+                  </h4>
+                  {vacunadorSel.detalle_vacunas.length === 0 ? (
+                    <p className="text-gray-400 text-sm text-center py-4">
+                      Sin registros de vacunas.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {vacunadorSel.detalle_vacunas.map((d) => {
+                        const pct =
+                          vacunadorSel.total_vacunas > 0
+                            ? Math.round(
+                                (d.cantidad / vacunadorSel.total_vacunas) * 100,
+                              )
+                            : 0;
+                        return (
+                          <div key={d.vacuna}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="font-medium text-gray-700">
+                                {d.vacuna}
+                              </span>
+                              <span className="text-gray-500">
+                                {d.cantidad} dosis · {pct}%
+                              </span>
+                            </div>
+                            <div className="h-2 bg-blue-50 rounded-full">
+                              <div
+                                className="h-2 bg-blue-500 rounded-full transition-all duration-700"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
-
-                <div className="flex gap-3 px-6 pb-6">
-                  <button
-                    type="button"
-                    onClick={cerrarModal}
-                    className="flex-1 py-2.5 border border-gray-200 rounded-xl
-                               text-sm font-medium text-gray-600
-                               hover:bg-gray-50 transition touch-manipulation"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white
-                               font-semibold py-2.5 rounded-xl text-sm
-                               transition active:scale-[0.98] touch-manipulation"
-                  >
-                    Guardar registro
-                  </button>
-                </div>
-              </form>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1036,21 +1376,12 @@ export default function Vacunas() {
   );
 }
 
-// ── Helpers de UI ───────────────────────────────────────────
+// ── Helpers UI ──────────────────────────────────────────────
 const inputCls = `w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm
   focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent
   transition text-gray-700 bg-white`;
 
-function FormField({ label, children }) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
+const labelCls = "block text-xs font-semibold text-gray-700 mb-1.5";
 
 function Campo({ label, valor }) {
   return (
@@ -1060,6 +1391,20 @@ function Campo({ label, valor }) {
       </p>
       <div className="text-sm text-gray-800 font-medium">{valor}</div>
     </div>
+  );
+}
+
+function BtnPag({ onClick, disabled, children }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-8 h-8 flex items-center justify-center rounded-lg border
+                 border-blue-200 bg-white text-blue-500 hover:bg-blue-50
+                 disabled:opacity-40 disabled:cursor-not-allowed transition"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -1076,11 +1421,7 @@ function IcoJeringa({ className }) {
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
-        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0
-           00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0
-           00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5
-           c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782
-           0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
       />
     </svg>
   );
@@ -1153,6 +1494,23 @@ function IcoReportes() {
     </svg>
   );
 }
+function IcoPerfil() {
+  return (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+      />
+    </svg>
+  );
+}
 function IcoSalir() {
   return (
     <svg
@@ -1204,7 +1562,7 @@ function IcoMenu() {
     </svg>
   );
 }
-function IcoUser() {
+function IcoPersonas() {
   return (
     <svg
       className="w-5 h-5"
@@ -1216,7 +1574,7 @@ function IcoUser() {
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
-        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
       />
     </svg>
   );
