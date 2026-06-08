@@ -56,32 +56,30 @@ const FORM_VACIO = {
   lote: "",
   fecha_aplicacion: new Date().toISOString().split("T")[0],
   observaciones: "",
+  vacunador_id: "",
+};
+
+// Formulario vacío para nuevo vacunador
+const FORM_VACUNADOR_VACIO = {
+  nombre: "",
+  apellido: "",
+  email: "",
+  password: "",
+  telefono: "",
+  rol: "enfermero",
 };
 
 function formatFecha(f) {
   if (!f) return "—";
-  const d = new Date(f);
-  return d.toLocaleDateString("es-VE", {
+  return new Date(f).toLocaleDateString("es-VE", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   });
 }
 
-// ── Hook para fetch autenticado ─────────────────────────────
-function useAuth() {
-  const token = localStorage.getItem("token");
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-  };
-  return headers;
-}
-
-// ── Componente principal ─────────────────────────────────────
 export default function Vacunas() {
   const navigate = useNavigate();
-  const headers = useAuth();
 
   const [usuario, setUsuario] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -101,23 +99,34 @@ export default function Vacunas() {
   const [modalDetalle, setModalDetalle] = useState(null);
   const [modalVacunadores, setModalVacunadores] = useState(false);
 
-  // Formulario
+  // ── NUEVO: Modal para crear vacunador ──────────────────
+  const [modalNuevoVacunador, setModalNuevoVacunador] = useState(false);
+  const [formVacunador, setFormVacunador] = useState(FORM_VACUNADOR_VACIO);
+  const [errorVacunador, setErrorVacunador] = useState("");
+  const [guardandoVacunador, setGuardandoVacunador] = useState(false);
+  const [okVacunador, setOkVacunador] = useState(false);
+  const [mostrarPassword, setMostrarPassword] = useState(false);
+
+  // Formulario vacuna
   const [form, setForm] = useState(FORM_VACIO);
   const [dosisOpts, setDosisOpts] = useState([]);
   const [errorForm, setErrorForm] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [okForm, setOkForm] = useState(false);
 
-  // Búsqueda por cédula (autocompletar paciente)
+  // Paciente autocompletar
   const [buscandoPac, setBuscandoPac] = useState(false);
   const [pacEncontrado, setPacEncontrado] = useState(false);
 
-  // Vacunadores
+  // Lista de vacunadores para el selector
+  const [listaVacunadores, setListaVacunadores] = useState([]);
+
+  // Panel de vacunadores (modal)
   const [vacunadores, setVacunadores] = useState([]);
   const [cargandoVac, setCargandoVac] = useState(false);
   const [vacunadorSel, setVacunadorSel] = useState(null);
 
-  // ── Auth guard ────────────────────────────────────────────
+  // ── Auth guard ──────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem("token");
     const u = localStorage.getItem("usuario");
@@ -136,7 +145,31 @@ export default function Vacunas() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
-  // ── Cargar registros ──────────────────────────────────────
+  // ── Headers autenticados ────────────────────────────────
+  const headers = useMemo(
+    () => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    }),
+    [],
+  );
+
+  // ── Cargar vacunadores para el selector ─────────────────
+  const cargarListaVacunadores = useCallback(async () => {
+    try {
+      const resp = await fetch(`${API}/api/vacunas/vacunadores`, { headers });
+      const data = await resp.json();
+      if (data.ok) setListaVacunadores(data.vacunadores);
+    } catch (err) {
+      console.error("Error cargando vacunadores:", err);
+    }
+  }, [headers]);
+
+  useEffect(() => {
+    cargarListaVacunadores();
+  }, [cargarListaVacunadores]);
+
+  // ── Cargar registros de vacunas ─────────────────────────
   const cargarRegistros = useCallback(
     async (pag = 1) => {
       setCargandoTabla(true);
@@ -155,7 +188,7 @@ export default function Vacunas() {
           setPagina(pag);
         }
       } catch (err) {
-        console.error(err);
+        console.error("Error cargando registros:", err);
       } finally {
         setCargandoTabla(false);
       }
@@ -167,7 +200,7 @@ export default function Vacunas() {
     cargarRegistros(1);
   }, [busqueda, filtroVac]);
 
-  // ── Dosis según vacuna ────────────────────────────────────
+  // ── Dosis según vacuna seleccionada ─────────────────────
   useEffect(() => {
     const tipo = TIPOS_VACUNA.find(
       (t) => t.id === parseInt(form.tipo_vacuna_id),
@@ -177,57 +210,50 @@ export default function Vacunas() {
       setForm((f) => ({ ...f, dosis: tipo.dosis[0] }));
     } else {
       setDosisOpts([]);
+      setForm((f) => ({ ...f, dosis: "" }));
     }
   }, [form.tipo_vacuna_id]);
 
-  // ── Buscar paciente por cédula ────────────────────────────
-  async function buscarPaciente(cedula) {
-    if (cedula.length < 5) {
-      setPacEncontrado(false);
-      return;
-    }
-    setBuscandoPac(true);
-    try {
-      const resp = await fetch(`${API}/api/vacunas/paciente/${cedula}`, {
-        headers,
-      });
-      const data = await resp.json();
-      if (data.ok && data.paciente) {
-        const p = data.paciente;
-        setForm((f) => ({
-          ...f,
-          nombre: p.nombre || "",
-          apellido: p.apellido || "",
-          fecha_nacimiento: p.fecha_nacimiento
-            ? p.fecha_nacimiento.split("T")[0]
-            : "",
-          sexo: p.sexo || "",
-          telefono: p.telefono || "",
-          email: p.email || "",
-          direccion: p.direccion || "",
-        }));
-        setPacEncontrado(true);
-      } else {
+  // ── Buscar paciente por cédula ──────────────────────────
+  const buscarPaciente = useCallback(
+    async (cedula) => {
+      if (cedula.length < 5) {
         setPacEncontrado(false);
+        return;
       }
-    } catch {
-      setPacEncontrado(false);
-    } finally {
-      setBuscandoPac(false);
-    }
-  }
-
-  // ── Abrir/cerrar modal formulario ─────────────────────────
-  function abrirForm() {
-    setForm({
-      ...FORM_VACIO,
-      fecha_aplicacion: new Date().toISOString().split("T")[0],
-    });
-    setErrorForm("");
-    setOkForm(false);
-    setPacEncontrado(false);
-    setModalForm(true);
-  }
+      setBuscandoPac(true);
+      try {
+        const resp = await fetch(
+          `${API}/api/vacunas/paciente/${cedula.trim()}`,
+          { headers },
+        );
+        const data = await resp.json();
+        if (data.ok && data.paciente) {
+          const p = data.paciente;
+          setForm((f) => ({
+            ...f,
+            nombre: p.nombre || "",
+            apellido: p.apellido || "",
+            fecha_nacimiento: p.fecha_nacimiento
+              ? p.fecha_nacimiento.split("T")[0]
+              : "",
+            sexo: p.sexo || "",
+            telefono: p.telefono || "",
+            email: p.email || "",
+            direccion: p.direccion || "",
+          }));
+          setPacEncontrado(true);
+        } else {
+          setPacEncontrado(false);
+        }
+      } catch {
+        setPacEncontrado(false);
+      } finally {
+        setBuscandoPac(false);
+      }
+    },
+    [headers],
+  );
 
   function handleFormChange(campo, valor) {
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -237,30 +263,51 @@ export default function Vacunas() {
     }
   }
 
-  // ── Guardar vacuna ────────────────────────────────────────
+  // ── Abrir modal formulario ──────────────────────────────
+  function abrirForm() {
+    const usuarioActual = JSON.parse(localStorage.getItem("usuario") || "{}");
+    const vacPredeterminado = listaVacunadores.find(
+      (v) => v.id === usuarioActual.id,
+    );
+
+    setForm({
+      ...FORM_VACIO,
+      fecha_aplicacion: new Date().toISOString().split("T")[0],
+      vacunador_id: vacPredeterminado ? String(vacPredeterminado.id) : "",
+    });
+    setErrorForm("");
+    setOkForm(false);
+    setPacEncontrado(false);
+    setModalForm(true);
+  }
+
+  // ── Guardar vacuna ──────────────────────────────────────
   async function guardarVacuna(e) {
     e.preventDefault();
     setErrorForm("");
 
-    const {
-      cedula,
-      nombre,
-      apellido,
-      tipo_vacuna_id,
-      dosis,
-      fecha_aplicacion,
-    } = form;
-    if (
-      !cedula ||
-      !nombre ||
-      !apellido ||
-      !tipo_vacuna_id ||
-      !dosis ||
-      !fecha_aplicacion
-    ) {
-      setErrorForm(
-        "Complete los campos obligatorios: cédula, nombre, apellido, vacuna, dosis y fecha.",
-      );
+    if (!form.cedula.trim()) {
+      setErrorForm("La cédula del paciente es obligatoria.");
+      return;
+    }
+    if (!form.nombre.trim() || !form.apellido.trim()) {
+      setErrorForm("El nombre y apellido del paciente son obligatorios.");
+      return;
+    }
+    if (!form.tipo_vacuna_id) {
+      setErrorForm("Debe seleccionar el tipo de vacuna.");
+      return;
+    }
+    if (!form.dosis) {
+      setErrorForm("Debe seleccionar el número de dosis.");
+      return;
+    }
+    if (!form.fecha_aplicacion) {
+      setErrorForm("La fecha de aplicación es obligatoria.");
+      return;
+    }
+    if (!form.vacunador_id) {
+      setErrorForm("Debe seleccionar el vacunador.");
       return;
     }
 
@@ -279,18 +326,21 @@ export default function Vacunas() {
           setModalForm(false);
           setOkForm(false);
           cargarRegistros(1);
+          cargarListaVacunadores();
         }, 1200);
       } else {
         setErrorForm(data.mensaje || "Error al guardar el registro.");
+        console.error("Error backend:", data.detalle);
       }
-    } catch {
+    } catch (err) {
+      console.error("Error de red:", err);
       setErrorForm("No se pudo conectar con el servidor.");
     } finally {
       setGuardando(false);
     }
   }
 
-  // ── Cargar vacunadores ────────────────────────────────────
+  // ── Abrir panel de vacunadores ──────────────────────────
   async function abrirVacunadores() {
     setModalVacunadores(true);
     setVacunadorSel(null);
@@ -306,7 +356,84 @@ export default function Vacunas() {
     }
   }
 
-  // ── Paginación ────────────────────────────────────────────
+  // ── NUEVO: Abrir modal nuevo vacunador ──────────────────
+  function abrirNuevoVacunador() {
+    setFormVacunador(FORM_VACUNADOR_VACIO);
+    setErrorVacunador("");
+    setOkVacunador(false);
+    setMostrarPassword(false);
+    setModalNuevoVacunador(true);
+  }
+
+  // ── NUEVO: Guardar nuevo vacunador ──────────────────────
+  async function guardarNuevoVacunador(e) {
+    e.preventDefault();
+    setErrorVacunador("");
+
+    if (!formVacunador.nombre.trim()) {
+      setErrorVacunador("El nombre es obligatorio.");
+      return;
+    }
+    if (!formVacunador.apellido.trim()) {
+      setErrorVacunador("El apellido es obligatorio.");
+      return;
+    }
+    if (!formVacunador.email.trim()) {
+      setErrorVacunador("El correo electrónico es obligatorio.");
+      return;
+    }
+    if (!formVacunador.password || formVacunador.password.length < 6) {
+      setErrorVacunador("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    setGuardandoVacunador(true);
+    try {
+      const resp = await fetch(`${API}/api/usuarios`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          nombre: `${formVacunador.nombre.trim()} ${formVacunador.apellido.trim()}`,
+          email: formVacunador.email.trim(),
+          password: formVacunador.password,
+          telefono: formVacunador.telefono.trim(),
+          rol: formVacunador.rol,
+        }),
+      });
+      const data = await resp.json();
+
+      if (data.ok) {
+        setOkVacunador(true);
+        setTimeout(async () => {
+          setModalNuevoVacunador(false);
+          setOkVacunador(false);
+          // Recargar lista de vacunadores en el modal y en el selector
+          await cargarListaVacunadores();
+          setCargandoVac(true);
+          try {
+            const r = await fetch(`${API}/api/vacunas/vacunadores`, {
+              headers,
+            });
+            const d = await r.json();
+            if (d.ok) setVacunadores(d.vacunadores);
+          } catch (err) {
+            console.error(err);
+          } finally {
+            setCargandoVac(false);
+          }
+        }, 1200);
+      } else {
+        setErrorVacunador(data.mensaje || "Error al crear el vacunador.");
+      }
+    } catch (err) {
+      console.error("Error de red:", err);
+      setErrorVacunador("No se pudo conectar con el servidor.");
+    } finally {
+      setGuardandoVacunador(false);
+    }
+  }
+
+  // ── Paginación ──────────────────────────────────────────
   const totalPaginas = Math.ceil(total / POR_PAGINA);
   const paginas = useMemo(() => {
     if (totalPaginas <= 5)
@@ -331,6 +458,8 @@ export default function Vacunas() {
         .slice(0, 2)
         .toUpperCase()
     : "??";
+
+  const esAdmin = usuario?.rol === "admin";
 
   const NAV = [
     { label: "Inicio", ruta: "/dashboard", activo: false },
@@ -383,7 +512,11 @@ export default function Vacunas() {
               }}
               className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg
                          text-sm font-medium transition text-left touch-manipulation
-                         ${item.activo ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"}`}
+                         ${
+                           item.activo
+                             ? "bg-white/15 text-white"
+                             : "text-white/55 hover:bg-white/10 hover:text-white"
+                         }`}
             >
               <span className="w-5 h-5 flex-shrink-0">
                 {item.label === "Inicio" && <IcoHome />}
@@ -429,8 +562,9 @@ export default function Vacunas() {
       {/* ── Contenido ───────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 lg:ml-60">
         <header
-          className="lg:hidden sticky top-0 z-10 bg-blue-900 border-b border-white/10
-                           px-4 py-3 flex items-center justify-between"
+          className="lg:hidden sticky top-0 z-10 bg-blue-900
+                           border-b border-white/10 px-4 py-3
+                           flex items-center justify-between"
         >
           <button
             onClick={() => setSidebarOpen(true)}
@@ -460,20 +594,18 @@ export default function Vacunas() {
                 {total} registro{total !== 1 ? "s" : ""} en total
               </p>
             </div>
-            <div className="flex gap-2 flex-wrap">
-              {/* Botón vacunadores */}
+            <div className="flex gap-2 flex-wrap self-start sm:self-auto">
               <button
                 onClick={abrirVacunadores}
-                className="flex items-center gap-2 bg-white hover:bg-blue-50
-                           border border-blue-200 text-blue-700 font-semibold
-                           px-4 py-2.5 rounded-xl text-sm transition
-                           active:scale-[0.98] touch-manipulation shadow-sm"
+                className="flex items-center gap-2 bg-white hover:bg-blue-50 border
+                           border-blue-200 text-blue-700 font-semibold px-4 py-2.5
+                           rounded-xl text-sm transition active:scale-[0.98]
+                           touch-manipulation shadow-sm"
               >
                 <IcoPersonas />
                 <span className="hidden sm:inline">Vacunadores</span>
                 <span className="sm:hidden">Equipo</span>
               </button>
-              {/* Botón nueva vacuna */}
               <button
                 onClick={abrirForm}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700
@@ -521,15 +653,16 @@ export default function Vacunas() {
                 type="text"
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
-                placeholder="Buscar por cédula o nombre del paciente..."
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-blue-200
+                placeholder="Buscar por cédula o nombre..."
+                className="w-full pl-10 pr-10 py-2.5 bg-white border border-blue-200
                            rounded-xl text-sm focus:outline-none focus:ring-2
-                           focus:ring-blue-400 focus:border-transparent transition"
+                           focus:ring-blue-400 transition"
               />
               {busqueda && (
                 <button
                   onClick={() => setBusqueda("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2
+                             text-gray-400 hover:text-gray-600"
                 >
                   <IcoCerrar />
                 </button>
@@ -539,7 +672,8 @@ export default function Vacunas() {
               value={filtroVac}
               onChange={(e) => setFiltroVac(e.target.value)}
               className="px-3 py-2.5 bg-white border border-blue-200 rounded-xl text-sm
-                         focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700 sm:w-52"
+                         focus:outline-none focus:ring-2 focus:ring-blue-400
+                         text-gray-700 sm:w-52"
             >
               <option value="">Todas las vacunas</option>
               {TIPOS_VACUNA.map((t) => (
@@ -627,7 +761,8 @@ export default function Vacunas() {
                           <button
                             onClick={() => setModalDetalle(r)}
                             className="text-blue-600 hover:text-blue-800 text-xs font-medium
-                                     hover:underline transition opacity-70 group-hover:opacity-100"
+                                     hover:underline transition opacity-70 group-hover:opacity-100
+                                     whitespace-nowrap"
                           >
                             Ver detalle
                           </button>
@@ -725,15 +860,15 @@ export default function Vacunas() {
         >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div
-              className="flex items-center justify-between px-6 py-4
-                            border-b border-blue-100 sticky top-0 bg-white z-10"
+              className="flex items-center justify-between px-6 py-4 border-b border-blue-100
+                            sticky top-0 bg-white z-10"
             >
               <h3 className="text-base font-semibold text-blue-900">
                 Registrar vacuna aplicada
               </h3>
               <button
                 onClick={() => setModalForm(false)}
-                className="text-gray-400 hover:text-gray-600 transition p-1"
+                className="text-gray-400 hover:text-gray-600 p-1"
               >
                 <IcoCerrar />
               </button>
@@ -741,24 +876,10 @@ export default function Vacunas() {
 
             <form onSubmit={guardarVacuna} noValidate>
               <div className="px-6 py-5 space-y-5">
-                {/* Sección: datos del paciente */}
-                <div>
-                  <h4
-                    className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3
-                                 flex items-center gap-2"
-                  >
-                    <span
-                      className="w-5 h-5 bg-blue-100 rounded-full flex items-center
-                                     justify-center text-blue-600 font-bold text-xs"
-                    >
-                      1
-                    </span>
-                    Datos del paciente
-                  </h4>
-
-                  {/* Cédula con búsqueda */}
+                {/* Sección 1: Datos del paciente */}
+                <SeccionForm numero="1" titulo="Datos del paciente">
                   <div className="mb-3">
-                    <label className={labelCls}>Cédula *</label>
+                    <label className={lbl}>Cédula *</label>
                     <div className="relative">
                       <input
                         type="text"
@@ -767,7 +888,7 @@ export default function Vacunas() {
                           handleFormChange("cedula", e.target.value)
                         }
                         placeholder="V-12345678"
-                        className={inputCls}
+                        className={inp}
                       />
                       {buscandoPac && (
                         <span className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -779,7 +900,7 @@ export default function Vacunas() {
                       )}
                     </div>
                     {pacEncontrado && (
-                      <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                      <p className="text-xs text-green-600 mt-1 flex items-center gap-1 font-medium">
                         <svg
                           className="w-3 h-3"
                           fill="none"
@@ -793,14 +914,34 @@ export default function Vacunas() {
                             d="M5 13l4 4L19 7"
                           />
                         </svg>
-                        Paciente encontrado — datos cargados automáticamente
+                        Paciente encontrado — datos completados automáticamente
                       </p>
                     )}
+                    {!pacEncontrado &&
+                      form.cedula.length >= 5 &&
+                      !buscandoPac && (
+                        <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                          <svg
+                            className="w-3 h-3"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                            />
+                          </svg>
+                          Paciente nuevo — complete los datos a continuación
+                        </p>
+                      )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className={labelCls}>Nombre *</label>
+                      <label className={lbl}>Nombre *</label>
                       <input
                         type="text"
                         value={form.nombre}
@@ -808,11 +949,11 @@ export default function Vacunas() {
                           handleFormChange("nombre", e.target.value)
                         }
                         placeholder="Nombre"
-                        className={inputCls}
+                        className={inp}
                       />
                     </div>
                     <div>
-                      <label className={labelCls}>Apellido *</label>
+                      <label className={lbl}>Apellido *</label>
                       <input
                         type="text"
                         value={form.apellido}
@@ -820,28 +961,32 @@ export default function Vacunas() {
                           handleFormChange("apellido", e.target.value)
                         }
                         placeholder="Apellido"
-                        className={inputCls}
+                        className={inp}
                       />
                     </div>
                     <div>
-                      <label className={labelCls}>Fecha de nacimiento</label>
+                      <label className={lbl}>
+                        Fecha de nacimiento {!pacEncontrado && "*"}
+                      </label>
                       <input
                         type="date"
                         value={form.fecha_nacimiento}
                         onChange={(e) =>
                           handleFormChange("fecha_nacimiento", e.target.value)
                         }
-                        className={inputCls}
+                        className={inp}
                       />
                     </div>
                     <div>
-                      <label className={labelCls}>Sexo</label>
+                      <label className={lbl}>
+                        Sexo {!pacEncontrado && "*"}
+                      </label>
                       <select
                         value={form.sexo}
                         onChange={(e) =>
                           handleFormChange("sexo", e.target.value)
                         }
-                        className={inputCls}
+                        className={inp}
                       >
                         <option value="">Seleccionar...</option>
                         <option value="M">Masculino</option>
@@ -850,7 +995,7 @@ export default function Vacunas() {
                       </select>
                     </div>
                     <div>
-                      <label className={labelCls}>Teléfono</label>
+                      <label className={lbl}>Teléfono</label>
                       <input
                         type="tel"
                         value={form.telefono}
@@ -858,11 +1003,11 @@ export default function Vacunas() {
                           handleFormChange("telefono", e.target.value)
                         }
                         placeholder="0412-0000000"
-                        className={inputCls}
+                        className={inp}
                       />
                     </div>
                     <div>
-                      <label className={labelCls}>Correo electrónico</label>
+                      <label className={lbl}>Correo electrónico</label>
                       <input
                         type="email"
                         value={form.email}
@@ -870,13 +1015,12 @@ export default function Vacunas() {
                           handleFormChange("email", e.target.value)
                         }
                         placeholder="correo@ejemplo.com"
-                        className={inputCls}
+                        className={inp}
                       />
                     </div>
                   </div>
-
                   <div className="mt-3">
-                    <label className={labelCls}>Dirección</label>
+                    <label className={lbl}>Dirección</label>
                     <textarea
                       value={form.direccion}
                       onChange={(e) =>
@@ -884,35 +1028,22 @@ export default function Vacunas() {
                       }
                       placeholder="Dirección del paciente..."
                       rows={2}
-                      className={`${inputCls} resize-none`}
+                      className={`${inp} resize-none`}
                     />
                   </div>
-                </div>
+                </SeccionForm>
 
-                {/* Sección: datos de la vacuna */}
-                <div>
-                  <h4
-                    className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3
-                                 flex items-center gap-2"
-                  >
-                    <span
-                      className="w-5 h-5 bg-blue-100 rounded-full flex items-center
-                                     justify-center text-blue-600 font-bold text-xs"
-                    >
-                      2
-                    </span>
-                    Datos de la vacuna
-                  </h4>
-
+                {/* Sección 2: Datos de la vacuna */}
+                <SeccionForm numero="2" titulo="Datos de la vacuna">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className={labelCls}>Tipo de vacuna *</label>
+                      <label className={lbl}>Tipo de vacuna *</label>
                       <select
                         value={form.tipo_vacuna_id}
                         onChange={(e) =>
                           handleFormChange("tipo_vacuna_id", e.target.value)
                         }
-                        className={inputCls}
+                        className={inp}
                       >
                         <option value="">Seleccionar...</option>
                         {TIPOS_VACUNA.map((t) => (
@@ -923,14 +1054,14 @@ export default function Vacunas() {
                       </select>
                     </div>
                     <div>
-                      <label className={labelCls}>Número de dosis *</label>
+                      <label className={lbl}>Número de dosis *</label>
                       <select
                         value={form.dosis}
                         onChange={(e) =>
                           handleFormChange("dosis", e.target.value)
                         }
                         disabled={dosisOpts.length === 0}
-                        className={`${inputCls} disabled:opacity-50`}
+                        className={`${inp} disabled:opacity-50`}
                       >
                         {dosisOpts.length === 0 ? (
                           <option>Seleccione vacuna primero</option>
@@ -944,7 +1075,7 @@ export default function Vacunas() {
                       </select>
                     </div>
                     <div>
-                      <label className={labelCls}>Fecha de aplicación *</label>
+                      <label className={lbl}>Fecha de aplicación *</label>
                       <input
                         type="date"
                         value={form.fecha_aplicacion}
@@ -952,11 +1083,11 @@ export default function Vacunas() {
                           handleFormChange("fecha_aplicacion", e.target.value)
                         }
                         max={new Date().toISOString().split("T")[0]}
-                        className={inputCls}
+                        className={inp}
                       />
                     </div>
                     <div>
-                      <label className={labelCls}>Número de lote</label>
+                      <label className={lbl}>Número de lote</label>
                       <input
                         type="text"
                         value={form.lote}
@@ -964,13 +1095,37 @@ export default function Vacunas() {
                           handleFormChange("lote", e.target.value)
                         }
                         placeholder="Ej: BCG-001"
-                        className={inputCls}
+                        className={inp}
                       />
                     </div>
                   </div>
 
+                  {/* Selector de vacunador */}
                   <div className="mt-3">
-                    <label className={labelCls}>Observaciones</label>
+                    <label className={lbl}>Vacunador responsable *</label>
+                    <select
+                      value={form.vacunador_id}
+                      onChange={(e) =>
+                        handleFormChange("vacunador_id", e.target.value)
+                      }
+                      className={inp}
+                    >
+                      <option value="">Seleccionar vacunador...</option>
+                      {listaVacunadores.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.nombre} — {v.rol}
+                        </option>
+                      ))}
+                    </select>
+                    {listaVacunadores.length === 0 && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        No hay vacunadores registrados en el sistema.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-3">
+                    <label className={lbl}>Observaciones</label>
                     <textarea
                       value={form.observaciones}
                       onChange={(e) =>
@@ -978,16 +1133,30 @@ export default function Vacunas() {
                       }
                       placeholder="Opcional..."
                       rows={2}
-                      className={`${inputCls} resize-none`}
+                      className={`${inp} resize-none`}
                     />
                   </div>
-                </div>
+                </SeccionForm>
 
+                {/* Mensajes */}
                 {errorForm && (
                   <div
                     className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl
-                                  text-sm text-red-600"
+                                  text-sm text-red-600 flex items-start gap-2"
                   >
+                    <svg
+                      className="w-4 h-4 flex-shrink-0 mt-0.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                      />
+                    </svg>
                     {errorForm}
                   </div>
                 )}
@@ -997,7 +1166,7 @@ export default function Vacunas() {
                                   text-sm text-green-700 font-medium flex items-center gap-2"
                   >
                     <svg
-                      className="w-4 h-4"
+                      className="w-4 h-4 flex-shrink-0"
                       fill="none"
                       stroke="currentColor"
                       strokeWidth={2.5}
@@ -1028,7 +1197,8 @@ export default function Vacunas() {
                   disabled={guardando}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
                              text-white font-semibold py-2.5 rounded-xl text-sm
-                             transition active:scale-[0.98] flex items-center justify-center gap-2"
+                             transition active:scale-[0.98] flex items-center
+                             justify-center gap-2"
                 >
                   {guardando ? (
                     <>
@@ -1048,7 +1218,7 @@ export default function Vacunas() {
         </div>
       )}
 
-      {/* ══ MODAL: Detalle de vacuna ═════════════════════ */}
+      {/* ══ MODAL: Detalle ══════════════════════════════ */}
       {modalDetalle && (
         <div
           className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
@@ -1095,10 +1265,12 @@ export default function Vacunas() {
                 )}
               </div>
               {modalDetalle.observaciones && (
-                <Campo
-                  label="Observaciones"
-                  valor={modalDetalle.observaciones}
-                />
+                <div className="mt-2">
+                  <Campo
+                    label="Observaciones"
+                    valor={modalDetalle.observaciones}
+                  />
+                </div>
               )}
               <button
                 onClick={() => setModalDetalle(null)}
@@ -1112,7 +1284,7 @@ export default function Vacunas() {
         </div>
       )}
 
-      {/* ══ MODAL: Vacunadores ═══════════════════════════ */}
+      {/* ══ MODAL: Vacunadores ══════════════════════════ */}
       {modalVacunadores && (
         <div
           className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
@@ -1123,21 +1295,53 @@ export default function Vacunas() {
             }
           }}
         >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-blue-100 sticky top-0 bg-white z-10">
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl
+                          max-h-[90vh] overflow-y-auto"
+          >
+            {/* ── Header del modal ── */}
+            <div
+              className="flex items-center justify-between px-6 py-4 border-b border-blue-100
+                            sticky top-0 bg-white z-10"
+            >
               <div>
                 <h3 className="text-base font-semibold text-blue-900">
                   {vacunadorSel
-                    ? `Record de ${vacunadorSel.nombre}`
+                    ? `Record — ${vacunadorSel.nombre}`
                     : "Equipo de vacunadores"}
                 </h3>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {vacunadorSel
-                    ? "Detalle de su actividad"
-                    : `${vacunadores.length} vacunadores registrados`}
+                    ? "Detalle de actividad"
+                    : `${vacunadores.length} vacunadores en el ASIC`}
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {/* ── NUEVO: Botón agregar vacunador (solo admin, solo en vista lista) ── */}
+                {esAdmin && !vacunadorSel && (
+                  <button
+                    onClick={abrirNuevoVacunador}
+                    className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700
+                               text-white text-xs font-semibold px-3 py-1.5 rounded-lg
+                               transition active:scale-[0.97] shadow-sm"
+                    title="Agregar nuevo vacunador"
+                  >
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                    Agregar
+                  </button>
+                )}
                 {vacunadorSel && (
                   <button
                     onClick={() => setVacunadorSel(null)}
@@ -1181,20 +1385,31 @@ export default function Vacunas() {
                   />
                 </div>
               ) : !vacunadorSel ? (
-                /* Lista de vacunadores */
+                // Lista de vacunadores
                 <div className="space-y-3">
                   {vacunadores.length === 0 ? (
-                    <p className="text-center text-gray-400 py-8">
-                      No hay vacunadores registrados.
-                    </p>
+                    <div className="text-center py-10">
+                      <p className="text-gray-400 text-sm mb-3">
+                        No hay vacunadores registrados.
+                      </p>
+                      {esAdmin && (
+                        <button
+                          onClick={abrirNuevoVacunador}
+                          className="text-blue-600 hover:text-blue-800 text-sm font-medium
+                                     underline transition"
+                        >
+                          Agregar el primero
+                        </button>
+                      )}
+                    </div>
                   ) : (
                     vacunadores.map((v) => (
                       <button
                         key={v.id}
                         onClick={() => setVacunadorSel(v)}
                         className="w-full bg-blue-50 hover:bg-blue-100 border border-blue-100
-                                 hover:border-blue-300 rounded-2xl p-4 text-left transition
-                                 active:scale-[0.99] group"
+                                 hover:border-blue-300 rounded-2xl p-4 text-left
+                                 transition active:scale-[0.99] group"
                       >
                         <div className="flex items-center gap-4">
                           <div
@@ -1237,14 +1452,14 @@ export default function Vacunas() {
                             />
                           </svg>
                         </div>
-                        <div className="flex gap-4 mt-3 pt-3 border-t border-blue-100">
-                          <div className="text-center">
+                        <div className="flex gap-6 mt-3 pt-3 border-t border-blue-100">
+                          <div>
                             <p className="text-sm font-semibold text-gray-700">
                               {v.total_pacientes}
                             </p>
                             <p className="text-xs text-gray-400">pacientes</p>
                           </div>
-                          <div className="text-center">
+                          <div>
                             <p className="text-sm font-semibold text-gray-700">
                               {v.ultima_aplicacion
                                 ? formatFecha(v.ultima_aplicacion)
@@ -1254,7 +1469,7 @@ export default function Vacunas() {
                               última aplicación
                             </p>
                           </div>
-                          <div className="text-center">
+                          <div>
                             <p className="text-sm font-semibold text-gray-700">
                               {v.primera_aplicacion
                                 ? formatFecha(v.primera_aplicacion)
@@ -1270,9 +1485,8 @@ export default function Vacunas() {
                   )}
                 </div>
               ) : (
-                /* Detalle de un vacunador */
+                // Detalle del vacunador seleccionado
                 <div>
-                  {/* Tarjeta resumen */}
                   <div className="bg-blue-50 rounded-2xl p-5 mb-5 flex items-center gap-4">
                     <div
                       className="w-14 h-14 bg-blue-600 rounded-full flex items-center
@@ -1285,7 +1499,7 @@ export default function Vacunas() {
                         .slice(0, 2)
                         .toUpperCase()}
                     </div>
-                    <div className="flex-1">
+                    <div>
                       <h4 className="font-bold text-gray-800 text-base">
                         {vacunadorSel.nombre}
                       </h4>
@@ -1298,7 +1512,6 @@ export default function Vacunas() {
                     </div>
                   </div>
 
-                  {/* Stats */}
                   <div className="grid grid-cols-3 gap-3 mb-5">
                     <div className="bg-white border border-blue-100 rounded-xl p-3 text-center">
                       <p className="text-2xl font-bold text-blue-600">
@@ -1312,59 +1525,54 @@ export default function Vacunas() {
                       <p className="text-2xl font-bold text-blue-600">
                         {vacunadorSel.total_pacientes}
                       </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Pacientes atendidos
-                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">Pacientes</p>
                     </div>
                     <div className="bg-white border border-blue-100 rounded-xl p-3 text-center">
-                      <p className="text-lg font-bold text-blue-600">
+                      <p className="text-base font-bold text-blue-600">
                         {vacunadorSel.ultima_aplicacion
                           ? formatFecha(vacunadorSel.ultima_aplicacion)
                           : "—"}
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">
-                        Última aplicación
+                        Última aplic.
                       </p>
                     </div>
                   </div>
 
-                  {/* Detalle por vacuna */}
                   <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
-                    Distribución por tipo de vacuna
+                    Distribución por vacuna
                   </h4>
                   {vacunadorSel.detalle_vacunas.length === 0 ? (
                     <p className="text-gray-400 text-sm text-center py-4">
-                      Sin registros de vacunas.
+                      Sin registros aún.
                     </p>
                   ) : (
-                    <div className="space-y-2">
-                      {vacunadorSel.detalle_vacunas.map((d) => {
-                        const pct =
-                          vacunadorSel.total_vacunas > 0
-                            ? Math.round(
-                                (d.cantidad / vacunadorSel.total_vacunas) * 100,
-                              )
-                            : 0;
-                        return (
-                          <div key={d.vacuna}>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="font-medium text-gray-700">
-                                {d.vacuna}
-                              </span>
-                              <span className="text-gray-500">
-                                {d.cantidad} dosis · {pct}%
-                              </span>
-                            </div>
-                            <div className="h-2 bg-blue-50 rounded-full">
-                              <div
-                                className="h-2 bg-blue-500 rounded-full transition-all duration-700"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
+                    vacunadorSel.detalle_vacunas.map((d) => {
+                      const pct =
+                        vacunadorSel.total_vacunas > 0
+                          ? Math.round(
+                              (d.cantidad / vacunadorSel.total_vacunas) * 100,
+                            )
+                          : 0;
+                      return (
+                        <div key={d.vacuna} className="mb-3">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="font-medium text-gray-700">
+                              {d.vacuna}
+                            </span>
+                            <span className="text-gray-500">
+                              {d.cantidad} · {pct}%
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="h-2 bg-blue-50 rounded-full">
+                            <div
+                              className="h-2 bg-blue-500 rounded-full transition-all duration-700"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -1372,16 +1580,301 @@ export default function Vacunas() {
           </div>
         </div>
       )}
+
+      {/* ══ MODAL: Nuevo vacunador (solo admin) ════════════ */}
+      {modalNuevoVacunador && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setModalNuevoVacunador(false);
+          }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-blue-100 sticky top-0 bg-white z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <svg
+                    className="w-4 h-4 text-blue-600"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-blue-900">
+                    Nuevo vacunador
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    Acceso de administrador
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalNuevoVacunador(false)}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                <IcoCerrar />
+              </button>
+            </div>
+
+            {/* Formulario */}
+            <form onSubmit={guardarNuevoVacunador} noValidate>
+              <div className="px-6 py-5 space-y-4">
+                {/* Nombre y apellido */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={lbl}>Nombre *</label>
+                    <input
+                      type="text"
+                      value={formVacunador.nombre}
+                      onChange={(e) =>
+                        setFormVacunador((f) => ({
+                          ...f,
+                          nombre: e.target.value,
+                        }))
+                      }
+                      placeholder="Ej: María"
+                      className={inp}
+                    />
+                  </div>
+                  <div>
+                    <label className={lbl}>Apellido *</label>
+                    <input
+                      type="text"
+                      value={formVacunador.apellido}
+                      onChange={(e) =>
+                        setFormVacunador((f) => ({
+                          ...f,
+                          apellido: e.target.value,
+                        }))
+                      }
+                      placeholder="Ej: González"
+                      className={inp}
+                    />
+                  </div>
+                </div>
+
+                {/* Correo */}
+                <div>
+                  <label className={lbl}>Correo electrónico *</label>
+                  <input
+                    type="email"
+                    value={formVacunador.email}
+                    onChange={(e) =>
+                      setFormVacunador((f) => ({ ...f, email: e.target.value }))
+                    }
+                    placeholder="correo@ejemplo.com"
+                    className={inp}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Se usará como usuario para iniciar sesión.
+                  </p>
+                </div>
+
+                {/* Contraseña */}
+                <div>
+                  <label className={lbl}>Contraseña *</label>
+                  <div className="relative">
+                    <input
+                      type={mostrarPassword ? "text" : "password"}
+                      value={formVacunador.password}
+                      onChange={(e) =>
+                        setFormVacunador((f) => ({
+                          ...f,
+                          password: e.target.value,
+                        }))
+                      }
+                      placeholder="Mínimo 6 caracteres"
+                      className={`${inp} pr-10`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMostrarPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2
+                                 text-gray-400 hover:text-gray-600 transition"
+                      tabIndex={-1}
+                    >
+                      {mostrarPassword ? (
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Teléfono y Rol */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={lbl}>Teléfono</label>
+                    <input
+                      type="tel"
+                      value={formVacunador.telefono}
+                      onChange={(e) =>
+                        setFormVacunador((f) => ({
+                          ...f,
+                          telefono: e.target.value,
+                        }))
+                      }
+                      placeholder="0412-0000000"
+                      className={inp}
+                    />
+                  </div>
+                  <div>
+                    <label className={lbl}>Rol *</label>
+                    <select
+                      value={formVacunador.rol}
+                      onChange={(e) =>
+                        setFormVacunador((f) => ({ ...f, rol: e.target.value }))
+                      }
+                      className={inp}
+                    >
+                      <option value="enfermero">Enfermero/a</option>
+                      <option value="medico">Médico/a</option>
+                      <option value="auxiliar">Auxiliar</option>
+                      <option value="admin">Administrador</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Mensajes de estado */}
+                {errorVacunador && (
+                  <div
+                    className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl
+                                  text-sm text-red-600 flex items-start gap-2"
+                  >
+                    <svg
+                      className="w-4 h-4 flex-shrink-0 mt-0.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                      />
+                    </svg>
+                    {errorVacunador}
+                  </div>
+                )}
+                {okVacunador && (
+                  <div
+                    className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl
+                                  text-sm text-green-700 font-medium flex items-center gap-2"
+                  >
+                    <svg
+                      className="w-4 h-4 flex-shrink-0"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                    Vacunador creado correctamente
+                  </div>
+                )}
+              </div>
+
+              {/* Acciones */}
+              <div className="flex gap-3 px-6 pb-6">
+                <button
+                  type="button"
+                  onClick={() => setModalNuevoVacunador(false)}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm
+                             font-medium text-gray-600 hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoVacunador}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
+                             text-white font-semibold py-2.5 rounded-xl text-sm
+                             transition active:scale-[0.98] flex items-center
+                             justify-center gap-2"
+                >
+                  {guardandoVacunador ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    "Crear vacunador"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Helpers UI ──────────────────────────────────────────────
-const inputCls = `w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm
-  focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent
-  transition text-gray-700 bg-white`;
-
-const labelCls = "block text-xs font-semibold text-gray-700 mb-1.5";
+// ── Componentes helper ──────────────────────────────────────
+function SeccionForm({ numero, titulo, children }) {
+  return (
+    <div>
+      <h4
+        className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3
+                     flex items-center gap-2"
+      >
+        <span
+          className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center
+                         text-blue-600 font-bold text-xs flex-shrink-0"
+        >
+          {numero}
+        </span>
+        {titulo}
+      </h4>
+      {children}
+    </div>
+  );
+}
 
 function Campo({ label, valor }) {
   return (
@@ -1407,6 +1900,12 @@ function BtnPag({ onClick, disabled, children }) {
     </button>
   );
 }
+
+const inp = `w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm
+  focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent
+  transition text-gray-700 bg-white`;
+
+const lbl = "block text-xs font-semibold text-gray-700 mb-1.5";
 
 // ── Iconos ──────────────────────────────────────────────────
 function IcoJeringa({ className }) {
