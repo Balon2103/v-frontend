@@ -459,7 +459,7 @@ export default function Vacunas() {
         .toUpperCase()
     : "??";
 
-  const esAdmin = usuario?.roles === "admin";
+  const esAdmin = usuario?.rol === "admin";
 
   const NAV = [
     { label: "Inicio", ruta: "/dashboard", activo: false },

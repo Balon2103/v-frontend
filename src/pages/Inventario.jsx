@@ -1,139 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
-// ── Datos iniciales del inventario ──────────────────────────
-const INVENTARIO_INICIAL = [
-  {
-    id: 1,
-    vacuna: "BCG",
-    stock: 320,
-    minimo: 50,
-    lote: "BCG-003",
-    ultimaEntrada: "2025-04-05",
-    vencimiento: "2026-01-15",
-  },
-  {
-    id: 2,
-    vacuna: "Polio Inyectable (IPV)",
-    stock: 180,
-    minimo: 30,
-    lote: "IPV-008",
-    ultimaEntrada: "2025-04-09",
-    vencimiento: "2025-12-20",
-  },
-  {
-    id: 3,
-    vacuna: "Polio Oral",
-    stock: 15,
-    minimo: 20,
-    lote: "PO-034",
-    ultimaEntrada: "2025-04-06",
-    vencimiento: "2025-10-30",
-  },
-  {
-    id: 4,
-    vacuna: "Pentavalente",
-    stock: 8,
-    minimo: 30,
-    lote: "PV-044",
-    ultimaEntrada: "2025-04-04",
-    vencimiento: "2025-11-10",
-  },
-  {
-    id: 5,
-    vacuna: "Hepatitis B",
-    stock: 240,
-    minimo: 40,
-    lote: "HB-013",
-    ultimaEntrada: "2025-04-02",
-    vencimiento: "2026-03-22",
-  },
-  {
-    id: 6,
-    vacuna: "SRP",
-    stock: 6,
-    minimo: 25,
-    lote: "SRP-020",
-    ultimaEntrada: "2025-04-03",
-    vencimiento: "2025-09-15",
-  },
-  {
-    id: 7,
-    vacuna: "Fiebre Amarilla",
-    stock: 95,
-    minimo: 20,
-    lote: "FA-024",
-    ultimaEntrada: "2025-04-07",
-    vencimiento: "2026-02-28",
-  },
-  {
-    id: 8,
-    vacuna: "Toxoide",
-    stock: 110,
-    minimo: 30,
-    lote: "TX-006",
-    ultimaEntrada: "2025-04-08",
-    vencimiento: "2025-12-01",
-  },
-];
-
-// Historial de movimientos
-const MOVIMIENTOS_INICIAL = [
-  {
-    id: 1,
-    vacuna: "BCG",
-    tipo: "entrada",
-    cantidad: 100,
-    lote: "BCG-003",
-    fecha: "2025-04-05",
-    responsable: "Coordinador ASIC",
-  },
-  {
-    id: 2,
-    vacuna: "Polio Inyectable (IPV)",
-    tipo: "entrada",
-    cantidad: 50,
-    lote: "IPV-008",
-    fecha: "2025-04-09",
-    responsable: "Coordinador ASIC",
-  },
-  {
-    id: 3,
-    vacuna: "Pentavalente",
-    tipo: "salida",
-    cantidad: 22,
-    lote: "PV-044",
-    fecha: "2025-04-10",
-    responsable: "Personal admin.",
-  },
-  {
-    id: 4,
-    vacuna: "SRP",
-    tipo: "salida",
-    cantidad: 19,
-    lote: "SRP-020",
-    fecha: "2025-04-11",
-    responsable: "Personal admin.",
-  },
-  {
-    id: 5,
-    vacuna: "Hepatitis B",
-    tipo: "entrada",
-    cantidad: 80,
-    lote: "HB-013",
-    fecha: "2025-04-02",
-    responsable: "Coordinador ASIC",
-  },
-  {
-    id: 6,
-    vacuna: "Fiebre Amarilla",
-    tipo: "entrada",
-    cantidad: 50,
-    lote: "FA-024",
-    fecha: "2025-04-07",
-    responsable: "Coordinador ASIC",
-  },
-];
+const API = import.meta.env.VITE_API_URL || "";
+const POR_PAGINA = 10;
 
 const TIPOS_VACUNA = [
   "BCG",
@@ -146,73 +15,95 @@ const TIPOS_VACUNA = [
   "Toxoide",
 ];
 
-const FORM_VACIO = {
-  vacuna: "",
-  lote: "",
-  cantidad: "",
-  fechaEntrada: "",
-  vencimiento: "",
-};
-const POR_PAGINA = 10;
-
-// ── Helpers ─────────────────────────────────────────────────
 function estadoStock(stock, minimo) {
-  const pct = (stock / (minimo * 3)) * 100;
   if (stock <= 0)
     return {
       label: "Sin stock",
       color: "bg-gray-100 text-gray-500",
-      barra: "bg-gray-300",
+      barra: "bg-gray-400",
       pct: 0,
     };
   if (stock < minimo)
     return {
       label: "Crítico",
-      color: "bg-blue-100 text-blue-700",
-      barra: "bg-blue-500",
-      pct: Math.max(5, Math.min(pct, 100)),
+      color: "bg-red-100 text-red-700",
+      barra: "bg-red-500",
+      pct: Math.max(5, Math.min((stock / (minimo * 3)) * 100, 100)),
     };
   if (stock < minimo * 1.5)
     return {
       label: "Bajo",
       color: "bg-amber-100 text-amber-700",
       barra: "bg-amber-400",
-      pct: Math.min(pct, 100),
+      pct: Math.min((stock / (minimo * 3)) * 100, 100),
     };
   return {
     label: "OK",
     color: "bg-green-100 text-green-700",
     barra: "bg-green-500",
-    pct: Math.min(pct, 100),
+    pct: Math.min((stock / (minimo * 3)) * 100, 100),
   };
 }
 
 function formatFecha(f) {
   if (!f) return "—";
-  const [y, m, d] = f.split("-");
-  return `${d}/${m}/${y}`;
+  return new Date(f).toLocaleDateString("es-VE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
-const inputCls = `w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm
-  focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent
-  transition text-gray-700 bg-white`;
+const FORM_VACIO = {
+  tipo_vacuna_id: "",
+  lote: "",
+  cantidad: "",
+  fecha_entrada: new Date().toISOString().split("T")[0],
+  vencimiento: "",
+  observaciones: "",
+};
 
-// ── Componente principal ────────────────────────────────────
 export default function Inventario() {
   const navigate = useNavigate();
 
   const [usuario, setUsuario] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [inventario, setInventario] = useState(INVENTARIO_INICIAL);
-  const [movimientos, setMovimientos] = useState(MOVIMIENTOS_INICIAL);
-  const [tab, setTab] = useState("inventario"); // "inventario" | "movimientos"
-  const [busqueda, setBusqueda] = useState("");
-  const [pagina, setPagina] = useState(1);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(FORM_VACIO);
-  const [error, setError] = useState("");
-  const [guardado, setGuardado] = useState(false);
 
+  // Datos
+  const [inventario, setInventario] = useState([]);
+  const [resumen, setResumen] = useState(null);
+  const [alertas, setAlertas] = useState([]);
+
+  // Movimientos
+  const [movimientos, setMovimientos] = useState([]);
+  const [totalMov, setTotalMov] = useState(0);
+  const [paginaMov, setPaginaMov] = useState(1);
+
+  // Estados de carga
+  const [cargandoInv, setCargandoInv] = useState(false);
+  const [cargandoMov, setCargandoMov] = useState(false);
+
+  // UI
+  const [tab, setTab] = useState("inventario");
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroVac, setFiltroVac] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("");
+
+  // Modal entrada
+  const [modalEntrada, setModalEntrada] = useState(false);
+  const [form, setForm] = useState(FORM_VACIO);
+  const [errorForm, setErrorForm] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [okForm, setOkForm] = useState(false);
+
+  // Modal editar mínimo (solo admin)
+  const [modalMinimo, setModalMinimo] = useState(null); // { id, vacuna, stock_minimo }
+  const [nuevoMinimo, setNuevoMinimo] = useState("");
+  const [guardandoMin, setGuardandoMin] = useState(false);
+  const [okMin, setOkMin] = useState(false);
+  const [errorMin, setErrorMin] = useState("");
+
+  // ── Auth guard ────────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem("token");
     const u = localStorage.getItem("usuario");
@@ -231,119 +122,199 @@ export default function Inventario() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
-  // Filtrar según tab activo
-  const filtrados = useMemo(() => {
-    const q = busqueda.toLowerCase();
-    if (tab === "inventario") {
-      return inventario.filter((r) => r.vacuna.toLowerCase().includes(q));
+  const headers = useMemo(
+    () => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    }),
+    [],
+  );
+
+  const esAdmin = usuario?.rol === "administrador";
+
+  // ── Cargar inventario + resumen + alertas ─────────────────
+  const cargarInventario = useCallback(async () => {
+    setCargandoInv(true);
+    try {
+      const [rInv, rRes, rAl] = await Promise.all([
+        fetch(
+          `${API}/api/inventario${busqueda ? `?busqueda=${busqueda}` : ""}`,
+          { headers },
+        ),
+        fetch(`${API}/api/inventario/resumen`, { headers }),
+        fetch(`${API}/api/inventario/alertas`, { headers }),
+      ]);
+      const [dInv, dRes, dAl] = await Promise.all([
+        rInv.json(),
+        rRes.json(),
+        rAl.json(),
+      ]);
+      if (dInv.ok) setInventario(dInv.inventario);
+      if (dRes.ok) setResumen(dRes.resumen);
+      if (dAl.ok) setAlertas(dAl.alertas);
+    } catch (err) {
+      console.error("Error cargando inventario:", err);
+    } finally {
+      setCargandoInv(false);
     }
-    return movimientos.filter(
-      (r) =>
-        r.vacuna.toLowerCase().includes(q) || r.lote.toLowerCase().includes(q),
-    );
-  }, [inventario, movimientos, busqueda, tab]);
+  }, [busqueda, headers]);
+
+  // ── Cargar movimientos ────────────────────────────────────
+  const cargarMovimientos = useCallback(
+    async (pag = 1) => {
+      setCargandoMov(true);
+      try {
+        const params = new URLSearchParams({
+          page: pag,
+          limit: POR_PAGINA,
+          ...(filtroVac && { vacuna: filtroVac }),
+          ...(filtroTipo && { tipo: filtroTipo }),
+        });
+        const resp = await fetch(
+          `${API}/api/inventario/movimientos?${params}`,
+          { headers },
+        );
+        const data = await resp.json();
+        if (data.ok) {
+          setMovimientos(data.movimientos);
+          setTotalMov(data.total);
+          setPaginaMov(pag);
+        }
+      } catch (err) {
+        console.error("Error cargando movimientos:", err);
+      } finally {
+        setCargandoMov(false);
+      }
+    },
+    [filtroVac, filtroTipo, headers],
+  );
 
   useEffect(() => {
-    setPagina(1);
-  }, [busqueda, tab]);
+    cargarInventario();
+  }, [busqueda]);
+  useEffect(() => {
+    cargarMovimientos(1);
+  }, [filtroVac, filtroTipo]);
 
-  const totalPaginas = Math.ceil(filtrados.length / POR_PAGINA);
-  const paginaActual = Math.min(pagina, totalPaginas || 1);
-  const inicio = (paginaActual - 1) * POR_PAGINA;
-  const datos = filtrados.slice(inicio, inicio + POR_PAGINA);
-
-  const paginas = useMemo(() => {
-    if (totalPaginas <= 5)
-      return Array.from({ length: totalPaginas }, (_, i) => i + 1);
-    if (paginaActual <= 3) return [1, 2, 3, 4, 5];
-    if (paginaActual >= totalPaginas - 2)
+  // ── Paginación movimientos ────────────────────────────────
+  const totalPagsMov = Math.ceil(totalMov / POR_PAGINA);
+  const paginasMov = useMemo(() => {
+    if (totalPagsMov <= 5)
+      return Array.from({ length: totalPagsMov }, (_, i) => i + 1);
+    if (paginaMov <= 3) return [1, 2, 3, 4, 5];
+    if (paginaMov >= totalPagsMov - 2)
       return [
-        totalPaginas - 4,
-        totalPaginas - 3,
-        totalPaginas - 2,
-        totalPaginas - 1,
-        totalPaginas,
+        totalPagsMov - 4,
+        totalPagsMov - 3,
+        totalPagsMov - 2,
+        totalPagsMov - 1,
+        totalPagsMov,
       ];
     return [
-      paginaActual - 2,
-      paginaActual - 1,
-      paginaActual,
-      paginaActual + 1,
-      paginaActual + 2,
+      paginaMov - 2,
+      paginaMov - 1,
+      paginaMov,
+      paginaMov + 1,
+      paginaMov + 2,
     ];
-  }, [totalPaginas, paginaActual]);
+  }, [totalPagsMov, paginaMov]);
 
-  // Stats resumen
-  const criticos = inventario.filter((r) => r.stock < r.minimo).length;
-  const bajos = inventario.filter(
-    (r) => r.stock >= r.minimo && r.stock < r.minimo * 1.5,
-  ).length;
-  const totalDosis = inventario.reduce((a, r) => a + r.stock, 0);
-  const enBuenEstado = inventario.filter(
-    (r) => r.stock >= r.minimo * 1.5,
-  ).length;
-
-  function abrirModal() {
-    setForm({
-      ...FORM_VACIO,
-      fechaEntrada: new Date().toISOString().split("T")[0],
-    });
-    setError("");
-    setGuardado(false);
-    setModalOpen(true);
-  }
-
-  function handleForm(campo, valor) {
-    setForm((f) => ({ ...f, [campo]: valor }));
-  }
-
-  function guardar(e) {
+  // ── Registrar entrada ─────────────────────────────────────
+  async function guardarEntrada(e) {
     e.preventDefault();
-    setError("");
-    if (!form.vacuna || !form.lote || !form.cantidad || !form.fechaEntrada) {
-      setError("Complete todos los campos obligatorios.");
+    setErrorForm("");
+    if (!form.tipo_vacuna_id) {
+      setErrorForm("Seleccione el tipo de vacuna.");
       return;
     }
-    const cant = parseInt(form.cantidad);
-    if (isNaN(cant) || cant <= 0) {
-      setError("La cantidad debe ser un número mayor a 0.");
+    if (!form.lote.trim()) {
+      setErrorForm("El número de lote es obligatorio.");
+      return;
+    }
+    if (!form.cantidad || parseInt(form.cantidad) <= 0) {
+      setErrorForm("La cantidad debe ser mayor a 0.");
+      return;
+    }
+    if (!form.fecha_entrada) {
+      setErrorForm("La fecha de entrada es obligatoria.");
       return;
     }
 
-    // Actualizar stock en inventario
-    setInventario((prev) =>
-      prev.map((r) =>
-        r.vacuna === form.vacuna
-          ? {
-              ...r,
-              stock: r.stock + cant,
-              lote: form.lote,
-              ultimaEntrada: form.fechaEntrada,
-            }
-          : r,
-      ),
-    );
-
-    // Agregar movimiento
-    setMovimientos((prev) => [
-      {
-        id: prev.length + 1,
-        vacuna: form.vacuna,
-        tipo: "entrada",
-        cantidad: cant,
-        lote: form.lote,
-        fecha: form.fechaEntrada,
-        responsable: usuario?.nombre || "Usuario",
-      },
-      ...prev,
-    ]);
-
-    setGuardado(true);
-    setTimeout(() => {
-      setModalOpen(false);
-      setGuardado(false);
-    }, 1200);
+    setGuardando(true);
+    try {
+      const resp = await fetch(`${API}/api/inventario/entrada`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(form),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        setOkForm(true);
+        setTimeout(() => {
+          setModalEntrada(false);
+          setOkForm(false);
+          cargarInventario();
+          cargarMovimientos(1);
+        }, 1200);
+      } else {
+        setErrorForm(data.mensaje || "Error al registrar la entrada.");
+        console.error("Backend:", data.detalle);
+      }
+    } catch {
+      setErrorForm("No se pudo conectar con el servidor.");
+    } finally {
+      setGuardando(false);
+    }
   }
+
+  // ── Actualizar stock mínimo ───────────────────────────────
+  async function guardarMinimo(e) {
+    e.preventDefault();
+    setErrorMin("");
+    if (
+      !nuevoMinimo ||
+      isNaN(parseInt(nuevoMinimo)) ||
+      parseInt(nuevoMinimo) < 0
+    ) {
+      setErrorMin("Ingrese un número válido mayor o igual a 0.");
+      return;
+    }
+    setGuardandoMin(true);
+    try {
+      const resp = await fetch(
+        `${API}/api/inventario/${modalMinimo.id}/minimo`,
+        {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ stock_minimo: parseInt(nuevoMinimo) }),
+        },
+      );
+      const data = await resp.json();
+      if (data.ok) {
+        setOkMin(true);
+        setTimeout(() => {
+          setModalMinimo(null);
+          setOkMin(false);
+          cargarInventario();
+        }, 1200);
+      } else {
+        setErrorMin(data.mensaje || "Error al actualizar.");
+      }
+    } catch {
+      setErrorMin("No se pudo conectar.");
+    } finally {
+      setGuardandoMin(false);
+    }
+  }
+
+  // ── Preview del nuevo stock en el form ────────────────────
+  const stockActualForm = useMemo(() => {
+    if (!form.tipo_vacuna_id) return null;
+    const item = inventario.find(
+      (i) => i.tipo_vacuna_id === parseInt(form.tipo_vacuna_id),
+    );
+    return item ? item.stock_actual : 0;
+  }, [form.tipo_vacuna_id, inventario]);
 
   const iniciales = usuario?.nombre
     ? usuario.nombre
@@ -364,7 +335,6 @@ export default function Inventario() {
 
   return (
     <div className="min-h-screen flex bg-blue-50">
-      {/* Overlay móvil */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -396,7 +366,6 @@ export default function Inventario() {
             <IcoCerrar />
           </button>
         </div>
-
         <nav className="flex-1 px-3 py-4 space-y-0.5">
           {NAV.map((item) => (
             <button
@@ -407,14 +376,18 @@ export default function Inventario() {
               }}
               className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg
                          text-sm font-medium transition text-left touch-manipulation
-                         ${item.activo ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"}`}
+                         ${
+                           item.activo
+                             ? "bg-white/15 text-white"
+                             : "text-white/55 hover:bg-white/10 hover:text-white"
+                         }`}
             >
               <span className="w-5 h-5 flex-shrink-0">
                 {item.label === "Inicio" && <IcoHome />}
                 {item.label === "Vacunas" && <IcoVacuna />}
                 {item.label === "Inventario" && <IcoStock />}
                 {item.label === "Reportes" && <IcoReportes />}
-                {item.label === "Perfil" && <IcoUser />}
+                {item.label === "Perfil" && <IcoPerfil />}
               </span>
               {item.label}
               {item.activo && (
@@ -423,18 +396,17 @@ export default function Inventario() {
             </button>
           ))}
         </nav>
-
         <div className="border-t border-white/10 px-4 py-4">
           <div className="flex items-center gap-3">
             <div
-              className="w-9 h-9 bg-white rounded-full flex items-center justify-center
-                            text-blue-600 font-bold text-sm flex-shrink-0"
+              className="w-9 h-9 bg-white rounded-full flex items-center
+                            justify-center text-blue-600 font-bold text-sm flex-shrink-0"
             >
               {iniciales}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-white text-sm font-medium truncate">
-                {usuario?.nombre || "..."}
+                {usuario?.nombre}
               </p>
               <p className="text-blue-300 text-xs capitalize">{usuario?.rol}</p>
             </div>
@@ -453,10 +425,10 @@ export default function Inventario() {
 
       {/* ── Contenido ───────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 lg:ml-60">
-        {/* Topbar móvil */}
         <header
-          className="lg:hidden sticky top-0 z-10 bg-blue-900 border-b border-white/10
-                           px-4 py-3 flex items-center justify-between"
+          className="lg:hidden sticky top-0 z-10 bg-blue-900
+                           border-b border-white/10 px-4 py-3
+                           flex items-center justify-between"
         >
           <button
             onClick={() => setSidebarOpen(true)}
@@ -466,8 +438,8 @@ export default function Inventario() {
           </button>
           <span className="text-white text-sm font-semibold">Inventario</span>
           <div
-            className="w-9 h-9 bg-white rounded-full flex items-center justify-center
-                          text-blue-600 font-bold text-xs"
+            className="w-9 h-9 bg-white rounded-full flex items-center
+                          justify-center text-blue-600 font-bold text-xs"
           >
             {iniciales}
           </div>
@@ -485,11 +457,19 @@ export default function Inventario() {
               </p>
             </div>
             <button
-              onClick={abrirModal}
-              className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
-                         active:scale-[0.98] text-white font-semibold px-4 py-2.5 rounded-xl
-                         text-sm transition-all shadow-md shadow-blue-200 touch-manipulation
-                         self-start sm:self-auto"
+              onClick={() => {
+                setForm({
+                  ...FORM_VACIO,
+                  fecha_entrada: new Date().toISOString().split("T")[0],
+                });
+                setErrorForm("");
+                setOkForm(false);
+                setModalEntrada(true);
+              }}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700
+                         text-white font-semibold px-4 py-2.5 rounded-xl text-sm
+                         transition active:scale-[0.98] touch-manipulation
+                         shadow-md shadow-blue-200 self-start sm:self-auto"
             >
               <svg
                 className="w-4 h-4"
@@ -508,53 +488,62 @@ export default function Inventario() {
             </button>
           </div>
 
-          {/* ── Tarjetas resumen ─────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+          {/* Tarjetas de resumen */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-5">
             <StatCard
               label="Tipos de vacuna"
-              valor={inventario.length}
+              valor={resumen ? parseInt(resumen.total_tipos) : "—"}
               color="blue"
               icono={<IcoStock />}
             />
             <StatCard
               label="Dosis totales"
-              valor={totalDosis.toLocaleString()}
+              valor={
+                resumen ? parseInt(resumen.total_dosis).toLocaleString() : "—"
+              }
               color="blue"
               icono={<IcoReportes />}
             />
             <StatCard
               label="Stock crítico"
-              valor={criticos}
+              valor={resumen ? parseInt(resumen.criticos) : "—"}
               color="amber"
               icono={<IcoAlerta />}
             />
             <StatCard
               label="En buen estado"
-              valor={enBuenEstado}
+              valor={resumen ? parseInt(resumen.en_buen_estado) : "—"}
               color="green"
               icono={<IcoCheck />}
             />
           </div>
 
-          {/* Alertas críticas */}
-          {criticos > 0 && (
-            <div className="mb-5 p-4 bg-blue-50 border border-blue-200 rounded-2xl">
+          {/* Banner alertas críticas */}
+          {alertas.length > 0 && (
+            <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-2xl">
               <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                <p className="text-sm font-semibold text-blue-700">
-                  {criticos} vacuna{criticos > 1 ? "s" : ""} con stock crítico
+                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <p className="text-sm font-semibold text-red-700">
+                  {
+                    alertas.filter(
+                      (a) => a.estado === "critico" || a.estado === "sin_stock",
+                    ).length
+                  }{" "}
+                  vacuna(s) con stock crítico
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {inventario
-                  .filter((r) => r.stock < r.minimo)
-                  .map((r) => (
+                {alertas
+                  .filter(
+                    (a) => a.estado === "critico" || a.estado === "sin_stock",
+                  )
+                  .map((a) => (
                     <span
-                      key={r.id}
-                      className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full
+                      key={a.vacuna}
+                      className="px-2.5 py-1 bg-red-100 text-red-700 rounded-full
                                text-xs font-semibold"
                     >
-                      {r.vacuna} — {r.stock} dosis
+                      {a.vacuna} — {a.stock_actual} dosis
                     </span>
                   ))}
               </div>
@@ -562,7 +551,7 @@ export default function Inventario() {
           )}
 
           {/* Tabs */}
-          <div className="flex gap-1 mb-4 bg-blue-100/50 rounded-xl p-1 w-fit">
+          <div className="flex gap-1 mb-4 bg-blue-100/60 rounded-xl p-1 w-fit">
             {[
               { key: "inventario", label: "Stock actual" },
               { key: "movimientos", label: "Historial de lotes" },
@@ -570,7 +559,8 @@ export default function Inventario() {
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition touch-manipulation
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition
+                           touch-manipulation whitespace-nowrap
                            ${
                              tab === t.key
                                ? "bg-blue-600 text-white shadow-sm"
@@ -582,86 +572,267 @@ export default function Inventario() {
             ))}
           </div>
 
-          {/* Buscador */}
-          <div className="relative mb-4">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </span>
-            <input
-              type="text"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder={
-                tab === "inventario"
-                  ? "Buscar vacuna..."
-                  : "Buscar vacuna o lote..."
-              }
-              className="w-full pl-10 pr-10 py-2.5 bg-white border border-blue-200 rounded-xl
-                         text-sm focus:outline-none focus:ring-2 focus:ring-blue-400
-                         focus:border-transparent transition"
-            />
-            {busqueda && (
-              <button
-                onClick={() => setBusqueda("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <IcoCerrar />
-              </button>
-            )}
-          </div>
-
-          {/* ── Tabla stock actual ───────────────────────── */}
+          {/* ── TAB: Stock actual ──────────────────────────── */}
           {tab === "inventario" && (
-            <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-blue-50 border-b border-blue-100">
-                    <tr>
-                      {[
-                        "Vacuna",
-                        "Stock actual",
-                        "Mínimo",
-                        "Nivel de stock",
-                        "Último lote",
-                        "Últ. entrada",
-                        "Estado",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="text-left px-4 py-3 text-xs font-semibold
-                                               text-blue-400 uppercase tracking-wider whitespace-nowrap"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-blue-50">
-                    {datos.length === 0 ? (
+            <>
+              {/* Buscador */}
+              <div className="relative mb-4">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Buscar vacuna..."
+                  className="w-full pl-10 pr-10 py-2.5 bg-white border border-blue-200
+                             rounded-xl text-sm focus:outline-none focus:ring-2
+                             focus:ring-blue-400 transition"
+                />
+                {busqueda && (
+                  <button
+                    onClick={() => setBusqueda("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2
+                               text-gray-400 hover:text-gray-600"
+                  >
+                    <IcoCerrar />
+                  </button>
+                )}
+              </div>
+
+              <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-blue-50 border-b border-blue-100">
                       <tr>
-                        <td
-                          colSpan={7}
-                          className="px-4 py-10 text-center text-gray-400 text-sm"
-                        >
-                          No se encontraron vacunas.
-                        </td>
+                        {[
+                          "Vacuna",
+                          "Stock actual",
+                          "Mínimo",
+                          "Nivel",
+                          "Último lote",
+                          "Últ. entrada",
+                          "Estado",
+                          esAdmin ? "Acciones" : "",
+                        ].map((h) => (
+                          <th
+                            key={h}
+                            className="text-left px-4 py-3 text-xs font-semibold
+                                                 text-blue-400 uppercase tracking-wider whitespace-nowrap"
+                          >
+                            {h}
+                          </th>
+                        ))}
                       </tr>
-                    ) : (
-                      datos.map((r) => {
-                        const est = estadoStock(r.stock, r.minimo);
-                        return (
+                    </thead>
+                    <tbody className="divide-y divide-blue-50">
+                      {cargandoInv ? (
+                        <tr>
+                          <td colSpan={8} className="px-4 py-10 text-center">
+                            <span
+                              className="inline-block w-6 h-6 border-2 border-blue-300
+                                           border-t-blue-600 rounded-full animate-spin"
+                            />
+                          </td>
+                        </tr>
+                      ) : inventario.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={8}
+                            className="px-4 py-10 text-center text-gray-400"
+                          >
+                            No se encontraron vacunas.
+                          </td>
+                        </tr>
+                      ) : (
+                        inventario.map((r) => {
+                          const est = estadoStock(
+                            r.stock_actual,
+                            r.stock_minimo,
+                          );
+                          return (
+                            <tr
+                              key={r.id}
+                              className="hover:bg-blue-50/40 transition"
+                            >
+                              <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">
+                                {r.vacuna}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`font-bold text-lg ${
+                                    r.stock_actual < r.stock_minimo
+                                      ? "text-red-600"
+                                      : r.stock_actual < r.stock_minimo * 1.5
+                                        ? "text-amber-600"
+                                        : "text-gray-800"
+                                  }`}
+                                >
+                                  {r.stock_actual}
+                                </span>
+                                <span className="text-gray-400 text-xs ml-1">
+                                  dosis
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                {r.stock_minimo} dosis
+                              </td>
+                              <td className="px-4 py-3 min-w-[130px]">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 h-2 bg-blue-50 rounded-full">
+                                    <div
+                                      className={`h-2 ${est.barra} rounded-full transition-all duration-700`}
+                                      style={{ width: `${est.pct}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-gray-400 w-8 text-right">
+                                    {Math.round(est.pct)}%
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                {r.ultimo_lote || "—"}
+                              </td>
+                              <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                {formatFecha(r.ultima_entrada)}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`px-2.5 py-1 rounded-full text-xs
+                                             font-semibold whitespace-nowrap ${est.color}`}
+                                >
+                                  {est.label}
+                                </span>
+                              </td>
+                              {esAdmin && (
+                                <td className="px-4 py-3">
+                                  <button
+                                    onClick={() => {
+                                      setModalMinimo({
+                                        id: r.id,
+                                        vacuna: r.vacuna,
+                                        stock_minimo: r.stock_minimo,
+                                      });
+                                      setNuevoMinimo(String(r.stock_minimo));
+                                      setErrorMin("");
+                                      setOkMin(false);
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 text-xs
+                                             font-medium hover:underline transition whitespace-nowrap"
+                                  >
+                                    Editar mínimo
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-4 py-3 border-t border-blue-50 bg-blue-50/30">
+                  <p className="text-xs text-gray-400">
+                    {inventario.length} vacunas en el inventario
+                    {alertas.length > 0 && (
+                      <span className="ml-2 text-amber-600 font-medium">
+                        · {alertas.length} con stock bajo o crítico
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── TAB: Historial de movimientos ─────────────── */}
+          {tab === "movimientos" && (
+            <>
+              <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                <select
+                  value={filtroVac}
+                  onChange={(e) => setFiltroVac(e.target.value)}
+                  className="px-3 py-2.5 bg-white border border-blue-200 rounded-xl text-sm
+                             focus:outline-none focus:ring-2 focus:ring-blue-400
+                             text-gray-700 sm:w-52"
+                >
+                  <option value="">Todas las vacunas</option>
+                  {TIPOS_VACUNA.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={filtroTipo}
+                  onChange={(e) => setFiltroTipo(e.target.value)}
+                  className="px-3 py-2.5 bg-white border border-blue-200 rounded-xl text-sm
+                             focus:outline-none focus:ring-2 focus:ring-blue-400
+                             text-gray-700 sm:w-44"
+                >
+                  <option value="">Entradas y salidas</option>
+                  <option value="entrada">Solo entradas</option>
+                  <option value="salida">Solo salidas</option>
+                </select>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-blue-50 border-b border-blue-100">
+                      <tr>
+                        {[
+                          "Vacuna",
+                          "Tipo",
+                          "Cantidad",
+                          "Lote",
+                          "Fecha",
+                          "Vencimiento",
+                          "Responsable",
+                        ].map((h) => (
+                          <th
+                            key={h}
+                            className="text-left px-4 py-3 text-xs font-semibold
+                                                 text-blue-400 uppercase tracking-wider whitespace-nowrap"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-blue-50">
+                      {cargandoMov ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-10 text-center">
+                            <span
+                              className="inline-block w-6 h-6 border-2 border-blue-300
+                                           border-t-blue-600 rounded-full animate-spin"
+                            />
+                          </td>
+                        </tr>
+                      ) : movimientos.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={7}
+                            className="px-4 py-10 text-center text-gray-400"
+                          >
+                            No se encontraron movimientos.
+                          </td>
+                        </tr>
+                      ) : (
+                        movimientos.map((r) => (
                           <tr
                             key={r.id}
                             className="hover:bg-blue-50/40 transition"
@@ -671,170 +842,146 @@ export default function Inventario() {
                             </td>
                             <td className="px-4 py-3">
                               <span
-                                className={`font-bold text-base ${
-                                  r.stock < r.minimo
-                                    ? "text-blue-600"
-                                    : r.stock < r.minimo * 1.5
-                                      ? "text-amber-600"
-                                      : "text-gray-800"
-                                }`}
+                                className={`px-2.5 py-1 rounded-full text-xs font-semibold
+                              ${
+                                r.tipo === "entrada"
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}
                               >
-                                {r.stock}
+                                {r.tipo === "entrada"
+                                  ? "↑ Entrada"
+                                  : "↓ Salida"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-bold whitespace-nowrap">
+                              <span
+                                className={
+                                  r.tipo === "entrada"
+                                    ? "text-green-600"
+                                    : "text-red-600"
+                                }
+                              >
+                                {r.tipo === "entrada" ? "+" : "-"}
+                                {r.cantidad}
                               </span>
                               <span className="text-gray-400 text-xs ml-1">
                                 dosis
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                              {r.minimo} dosis
-                            </td>
-                            <td className="px-4 py-3 min-w-[120px]">
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 h-2 bg-blue-50 rounded-full">
-                                  <div
-                                    className={`h-2 ${est.barra} rounded-full transition-all duration-700`}
-                                    style={{ width: `${est.pct}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs text-gray-400 w-8 text-right">
-                                  {Math.round(est.pct)}%
-                                </span>
-                              </div>
+                            <td className="px-4 py-3 text-gray-500 text-xs">
+                              {r.lote || "—"}
                             </td>
                             <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                              {r.lote}
+                              {formatFecha(r.fecha)}
                             </td>
                             <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                              {formatFecha(r.ultimaEntrada)}
+                              {formatFecha(r.vencimiento)}
                             </td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={`px-2.5 py-1 rounded-full text-xs font-semibold
-                                             whitespace-nowrap ${est.color}`}
-                              >
-                                {est.label}
-                              </span>
+                            <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                              {r.responsable}
                             </td>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <Paginacion
-                inicio={inicio}
-                porPagina={POR_PAGINA}
-                total={filtrados.length}
-                totalPaginas={totalPaginas}
-                paginaActual={paginaActual}
-                paginas={paginas}
-                setPagina={setPagina}
-              />
-            </div>
-          )}
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-          {/* ── Tabla historial de movimientos ──────────── */}
-          {tab === "movimientos" && (
-            <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-blue-50 border-b border-blue-100">
-                    <tr>
-                      {[
-                        "Vacuna",
-                        "Tipo",
-                        "Cantidad",
-                        "Lote",
-                        "Fecha",
-                        "Responsable",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="text-left px-4 py-3 text-xs font-semibold
-                                               text-blue-400 uppercase tracking-wider whitespace-nowrap"
+                {/* Paginación movimientos */}
+                <div
+                  className="px-4 py-3 border-t border-blue-50 bg-blue-50/30
+                                flex flex-col sm:flex-row items-center justify-between gap-3"
+                >
+                  <p className="text-xs text-gray-400 order-2 sm:order-1">
+                    Mostrando{" "}
+                    <span className="font-semibold text-gray-600">
+                      {totalMov === 0 ? 0 : (paginaMov - 1) * POR_PAGINA + 1}–
+                      {Math.min(paginaMov * POR_PAGINA, totalMov)}
+                    </span>{" "}
+                    de{" "}
+                    <span className="font-semibold text-gray-600">
+                      {totalMov}
+                    </span>{" "}
+                    registros
+                  </p>
+                  {totalPagsMov > 1 && (
+                    <div className="flex items-center gap-1 order-1 sm:order-2">
+                      <BtnPag
+                        onClick={() =>
+                          cargarMovimientos(Math.max(1, paginaMov - 1))
+                        }
+                        disabled={paginaMov === 1}
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
                         >
-                          {h}
-                        </th>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15 19l-7-7 7-7"
+                          />
+                        </svg>
+                      </BtnPag>
+                      {paginasMov.map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => cargarMovimientos(n)}
+                          className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs
+                                     font-semibold transition border
+                                     ${
+                                       n === paginaMov
+                                         ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                         : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"
+                                     }`}
+                        >
+                          {n}
+                        </button>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-blue-50">
-                    {datos.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-4 py-10 text-center text-gray-400 text-sm"
+                      <BtnPag
+                        onClick={() =>
+                          cargarMovimientos(
+                            Math.min(totalPagsMov, paginaMov + 1),
+                          )
+                        }
+                        disabled={paginaMov === totalPagsMov}
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
                         >
-                          No se encontraron movimientos.
-                        </td>
-                      </tr>
-                    ) : (
-                      datos.map((r) => (
-                        <tr
-                          key={r.id}
-                          className="hover:bg-blue-50/40 transition"
-                        >
-                          <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
-                            {r.vacuna}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`px-2.5 py-1 rounded-full text-xs font-semibold
-                            ${
-                              r.tipo === "entrada"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-blue-100 text-blue-700"
-                            }`}
-                            >
-                              {r.tipo === "entrada" ? "↑ Entrada" : "↓ Salida"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 font-semibold text-gray-800">
-                            {r.tipo === "entrada" ? "+" : "-"}
-                            {r.cantidad} dosis
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">
-                            {r.lote}
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                            {formatFecha(r.fecha)}
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                            {r.responsable}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M9 5l7 7-7 7"
+                          />
+                        </svg>
+                      </BtnPag>
+                    </div>
+                  )}
+                </div>
               </div>
-              <Paginacion
-                inicio={inicio}
-                porPagina={POR_PAGINA}
-                total={filtrados.length}
-                totalPaginas={totalPaginas}
-                paginaActual={paginaActual}
-                paginas={paginas}
-                setPagina={setPagina}
-              />
-            </div>
+            </>
           )}
         </main>
       </div>
 
-      {/* ── Modal registrar entrada ──────────────────────── */}
-      {modalOpen && (
+      {/* ══ MODAL: Registrar entrada de lote ═════════════ */}
+      {modalEntrada && (
         <div
           className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setModalOpen(false);
+            if (e.target === e.currentTarget) setModalEntrada(false);
           }}
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md
-                          max-h-[90vh] overflow-y-auto"
-          >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div
               className="flex items-center justify-between px-6 py-4
                             border-b border-blue-100 sticky top-0 bg-white z-10"
@@ -843,40 +990,46 @@ export default function Inventario() {
                 Registrar entrada de lote
               </h3>
               <button
-                onClick={() => setModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 transition p-1"
+                onClick={() => setModalEntrada(false)}
+                className="text-gray-400 hover:text-gray-600 p-1"
               >
                 <IcoCerrar />
               </button>
             </div>
 
-            <form onSubmit={guardar} noValidate>
+            <form onSubmit={guardarEntrada} noValidate>
               <div className="px-6 py-5 space-y-4">
-                {/* Vacuna */}
+                {/* Tipo de vacuna */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                    Tipo de vacuna *
-                  </label>
+                  <label className={LBL}>Tipo de vacuna *</label>
                   <select
-                    value={form.vacuna}
-                    onChange={(e) => handleForm("vacuna", e.target.value)}
-                    className={inputCls}
+                    value={form.tipo_vacuna_id}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, tipo_vacuna_id: e.target.value }))
+                    }
+                    className={INP}
                   >
                     <option value="">Seleccionar...</option>
-                    {TIPOS_VACUNA.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {inventario.map((i) => (
+                      <option key={i.tipo_vacuna_id} value={i.tipo_vacuna_id}>
+                        {i.vacuna} (stock: {i.stock_actual})
                       </option>
                     ))}
                   </select>
-                  {form.vacuna && (
-                    <p className="text-xs text-gray-400 mt-1">
+
+                  {/* Preview stock actual */}
+                  {stockActualForm !== null && (
+                    <p className="text-xs text-gray-500 mt-1">
                       Stock actual:{" "}
-                      <span className="font-semibold text-gray-600">
-                        {inventario.find((r) => r.vacuna === form.vacuna)
-                          ?.stock ?? 0}{" "}
-                        dosis
+                      <span className="font-semibold text-gray-700">
+                        {stockActualForm} dosis
                       </span>
+                      {form.cantidad && parseInt(form.cantidad) > 0 && (
+                        <span className="ml-2 text-green-600 font-semibold">
+                          → {stockActualForm + parseInt(form.cantidad)} dosis
+                          después del registro
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>
@@ -884,28 +1037,28 @@ export default function Inventario() {
                 {/* Lote + Cantidad */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                      Número de lote *
-                    </label>
+                    <label className={LBL}>Número de lote *</label>
                     <input
                       type="text"
                       value={form.lote}
-                      onChange={(e) => handleForm("lote", e.target.value)}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, lote: e.target.value }))
+                      }
                       placeholder="Ej: BCG-004"
-                      className={inputCls}
+                      className={INP}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                      Cantidad de dosis *
-                    </label>
+                    <label className={LBL}>Cantidad de dosis *</label>
                     <input
                       type="number"
                       min="1"
                       value={form.cantidad}
-                      onChange={(e) => handleForm("cantidad", e.target.value)}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, cantidad: e.target.value }))
+                      }
                       placeholder="Ej: 100"
-                      className={inputCls}
+                      className={INP}
                     />
                   </div>
                 </div>
@@ -913,87 +1066,56 @@ export default function Inventario() {
                 {/* Fechas */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                      Fecha de entrada *
-                    </label>
+                    <label className={LBL}>Fecha de entrada *</label>
                     <input
                       type="date"
-                      value={form.fechaEntrada}
+                      value={form.fecha_entrada}
                       onChange={(e) =>
-                        handleForm("fechaEntrada", e.target.value)
+                        setForm((f) => ({
+                          ...f,
+                          fecha_entrada: e.target.value,
+                        }))
                       }
                       max={new Date().toISOString().split("T")[0]}
-                      className={inputCls}
+                      className={INP}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                      Fecha de vencimiento
-                    </label>
+                    <label className={LBL}>Fecha de vencimiento</label>
                     <input
                       type="date"
                       value={form.vencimiento}
                       onChange={(e) =>
-                        handleForm("vencimiento", e.target.value)
+                        setForm((f) => ({ ...f, vencimiento: e.target.value }))
                       }
                       min={new Date().toISOString().split("T")[0]}
-                      className={inputCls}
+                      className={INP}
                     />
                   </div>
                 </div>
 
-                {/* Preview del nuevo stock */}
-                {form.vacuna &&
-                  form.cantidad &&
-                  parseInt(form.cantidad) > 0 && (
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-xl">
-                      <p className="text-xs text-green-700 font-medium">
-                        Stock después del registro:{" "}
-                        <span className="font-bold text-green-800 text-sm">
-                          {(inventario.find((r) => r.vacuna === form.vacuna)
-                            ?.stock ?? 0) + parseInt(form.cantidad)}{" "}
-                          dosis
-                        </span>
-                      </p>
-                    </div>
-                  )}
+                {/* Observaciones */}
+                <div>
+                  <label className={LBL}>Observaciones</label>
+                  <textarea
+                    value={form.observaciones}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, observaciones: e.target.value }))
+                    }
+                    placeholder="Opcional..."
+                    rows={2}
+                    className={`${INP} resize-none`}
+                  />
+                </div>
 
-                {error && (
-                  <div
-                    className="px-4 py-3 bg-blue-50 border border-blue-200
-                                  rounded-xl text-sm text-blue-600"
-                  >
-                    {error}
-                  </div>
-                )}
-                {guardado && (
-                  <div
-                    className="px-4 py-3 bg-green-50 border border-green-200
-                                  rounded-xl text-sm text-green-700 font-medium
-                                  flex items-center gap-2"
-                  >
-                    <svg
-                      className="w-4 h-4 flex-shrink-0"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2.5}
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                    Entrada registrada correctamente
-                  </div>
-                )}
+                {errorForm && <MsgError msg={errorForm} />}
+                {okForm && <MsgOk msg="Entrada registrada correctamente." />}
               </div>
 
               <div className="flex gap-3 px-6 pb-6">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => setModalEntrada(false)}
                   className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm
                              font-medium text-gray-600 hover:bg-gray-50 transition"
                 >
@@ -1001,10 +1123,101 @@ export default function Inventario() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold
-                             py-2.5 rounded-xl text-sm transition active:scale-[0.98]"
+                  disabled={guardando}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
+                             text-white font-semibold py-2.5 rounded-xl text-sm
+                             transition active:scale-[0.98] flex items-center
+                             justify-center gap-2"
                 >
-                  Registrar entrada
+                  {guardando ? (
+                    <>
+                      <Spinner /> Guardando...
+                    </>
+                  ) : (
+                    "Registrar entrada"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: Editar stock mínimo (solo admin) ══════ */}
+      {modalMinimo && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setModalMinimo(null);
+          }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-blue-100">
+              <div>
+                <h3 className="text-base font-semibold text-blue-900">
+                  Editar stock mínimo
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {modalMinimo.vacuna}
+                </p>
+              </div>
+              <button
+                onClick={() => setModalMinimo(null)}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                <IcoCerrar />
+              </button>
+            </div>
+            <form onSubmit={guardarMinimo} noValidate>
+              <div className="px-6 py-5 space-y-4">
+                <div>
+                  <label className={LBL}>Stock mínimo actual</label>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {modalMinimo.stock_minimo} dosis
+                  </p>
+                </div>
+                <div>
+                  <label className={LBL}>Nuevo stock mínimo *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={nuevoMinimo}
+                    onChange={(e) => setNuevoMinimo(e.target.value)}
+                    placeholder="Ej: 20"
+                    className={INP}
+                    autoFocus
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Se generará alerta cuando el stock baje de este número.
+                  </p>
+                </div>
+                {errorMin && <MsgError msg={errorMin} />}
+                {okMin && <MsgOk msg="Stock mínimo actualizado." />}
+              </div>
+              <div className="flex gap-3 px-6 pb-6">
+                <button
+                  type="button"
+                  onClick={() => setModalMinimo(null)}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm
+                             font-medium text-gray-600 hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoMin}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
+                             text-white font-semibold py-2.5 rounded-xl text-sm
+                             transition active:scale-[0.98] flex items-center
+                             justify-center gap-2"
+                >
+                  {guardandoMin ? (
+                    <>
+                      <Spinner /> Guardando...
+                    </>
+                  ) : (
+                    "Guardar"
+                  )}
                 </button>
               </div>
             </form>
@@ -1015,95 +1228,7 @@ export default function Inventario() {
   );
 }
 
-// ── Componente paginación reutilizable ──────────────────────
-function Paginacion({
-  inicio,
-  porPagina,
-  total,
-  totalPaginas,
-  paginaActual,
-  paginas,
-  setPagina,
-}) {
-  return (
-    <div
-      className="px-4 py-3 border-t border-blue-50 bg-blue-50/30
-                    flex flex-col sm:flex-row items-center justify-between gap-3"
-    >
-      <p className="text-xs text-gray-400 order-2 sm:order-1">
-        Mostrando{" "}
-        <span className="font-semibold text-gray-600">
-          {total === 0 ? 0 : inicio + 1}–{Math.min(inicio + porPagina, total)}
-        </span>{" "}
-        de <span className="font-semibold text-gray-600">{total}</span>{" "}
-        registros
-      </p>
-      {totalPaginas > 1 && (
-        <div className="flex items-center gap-1 order-1 sm:order-2">
-          <button
-            onClick={() => setPagina((p) => Math.max(1, p - 1))}
-            disabled={paginaActual === 1}
-            className="w-8 h-8 flex items-center justify-center rounded-lg border
-                       border-blue-200 bg-white text-blue-500 hover:bg-blue-50
-                       disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-          </button>
-          {paginas.map((n) => (
-            <button
-              key={n}
-              onClick={() => setPagina(n)}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs
-                         font-semibold transition border
-                         ${
-                           n === paginaActual
-                             ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                             : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"
-                         }`}
-            >
-              {n}
-            </button>
-          ))}
-          <button
-            onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-            disabled={paginaActual === totalPaginas}
-            className="w-8 h-8 flex items-center justify-center rounded-lg border
-                       border-blue-200 bg-white text-blue-500 hover:bg-blue-50
-                       disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Tarjeta stat ────────────────────────────────────────────
+// ── Componentes helper ──────────────────────────────────────
 function StatCard({ label, valor, color, icono }) {
   const e =
     {
@@ -1136,6 +1261,59 @@ function StatCard({ label, valor, color, icono }) {
     </div>
   );
 }
+
+function BtnPag({ onClick, disabled, children }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-8 h-8 flex items-center justify-center rounded-lg border
+                 border-blue-200 bg-white text-blue-500 hover:bg-blue-50
+                 disabled:opacity-40 disabled:cursor-not-allowed transition"
+    >
+      {children}
+    </button>
+  );
+}
+
+function MsgError({ msg }) {
+  return (
+    <div
+      className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl
+                    text-sm text-red-600 flex items-start gap-2"
+    >
+      <IcoAlerta className="w-4 h-4 flex-shrink-0 mt-0.5" />
+      {msg}
+    </div>
+  );
+}
+
+function MsgOk({ msg }) {
+  return (
+    <div
+      className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl
+                    text-sm text-green-700 font-medium flex items-center gap-2"
+    >
+      <IcoCheck className="w-4 h-4 flex-shrink-0" />
+      {msg}
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <span
+      className="w-4 h-4 border-2 border-white/30 border-t-white
+                     rounded-full animate-spin inline-block"
+    />
+  );
+}
+
+const INP = `w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm
+  focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent
+  transition text-gray-700 bg-white`;
+
+const LBL = "block text-xs font-semibold text-gray-700 mb-1.5";
 
 // ── Iconos ──────────────────────────────────────────────────
 function IcoJeringa({ className }) {
@@ -1206,23 +1384,6 @@ function IcoStock() {
     </svg>
   );
 }
-function IcoUser() {
-  return (
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-      />
-    </svg>
-  );
-}
 function IcoReportes() {
   return (
     <svg
@@ -1240,7 +1401,7 @@ function IcoReportes() {
     </svg>
   );
 }
-function IcoAlerta() {
+function IcoPerfil() {
   return (
     <svg
       className="w-5 h-5"
@@ -1252,24 +1413,7 @@ function IcoAlerta() {
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
-        d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-      />
-    </svg>
-  );
-}
-function IcoCheck() {
-  return (
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
       />
     </svg>
   );
@@ -1322,6 +1466,36 @@ function IcoMenu() {
         strokeLinejoin="round"
         d="M4 6h16M4 12h16M4 18h16"
       />
+    </svg>
+  );
+}
+function IcoAlerta({ className }) {
+  return (
+    <svg
+      className={className || "w-5 h-5"}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+      />
+    </svg>
+  );
+}
+function IcoCheck({ className }) {
+  return (
+    <svg
+      className={className || "w-5 h-5"}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
     </svg>
   );
 }
