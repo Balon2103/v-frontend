@@ -104,7 +104,7 @@ export default function Reportes() {
 
   // Cargar selectores al montar
   useEffect(() => {
-    apiFetch(`${API}/reportes/vacunas/meses`)
+    apiFetch(`${API}/api/reportes/vacunas/meses`)
       .then((d) => {
         if (!d) return;
         setMesesDisponibles(d.meses);
@@ -112,7 +112,7 @@ export default function Reportes() {
       })
       .catch(() => setErrorVac("No se pudieron cargar los meses disponibles."));
 
-    apiFetch(`${API}/reportes/vacunas/tipos`)
+    apiFetch(`${API}/api/reportes/vacunas/tipos`)
       .then((d) => {
         if (d) setTiposVacuna(d.vacunas.map((v) => v.nombre));
       })
@@ -127,7 +127,7 @@ export default function Reportes() {
     try {
       const params = new URLSearchParams({ mes: mesVac });
       if (filtroVac) params.set("vacuna", filtroVac);
-      const data = await apiFetch(`${API}/reportes/vacunas?${params}`);
+      const data = await apiFetch(`${API}/api/reportes/vacunas?${params}`);
       if (data) {
         setDatosVac(data.datos);
         setPaginaVac(1);
@@ -152,7 +152,7 @@ export default function Reportes() {
       const params = new URLSearchParams({ periodo: periodoInv });
       if (filtroInvVac) params.set("vacuna", filtroInvVac);
       if (filtroTipo) params.set("tipo", filtroTipo);
-      const data = await apiFetch(`${API}/reportes/inventario?${params}`);
+      const data = await apiFetch(`${API}/api/reportes/inventario?${params}`);
       if (data) {
         setDatosInv(data.datos);
         setResumenInv(data.resumen);
