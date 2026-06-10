@@ -5,7 +5,8 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 
 // ── Config API ──────────────────────────────────────────────
-const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+// Sin "/api" al final: las rutas ya lo incluyen
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 function authHeaders() {
   const token = localStorage.getItem("token");
@@ -39,9 +40,11 @@ const BAR_COLOR = {
   Toxoide: "#172554",
 };
 
+// Soporta fechas ISO con timestamp ("2025-06-01T00:00:00.000Z") y fechas simples ("2025-06-01")
 function formatFecha(f) {
   if (!f) return "—";
-  const [y, m, d] = f.split("-");
+  const parte = String(f).split("T")[0];
+  const [y, m, d] = parte.split("-");
   return `${d}/${m}/${y}`;
 }
 
@@ -60,7 +63,7 @@ export default function Reportes() {
   const [tiposVacuna, setTiposVacuna] = useState([]);
 
   // Vacunas
-  const [mesVac, setMesVac] = useState("");
+  const [mesVac, setMesVac] = useState(""); // formato "YYYY-MM"
   const [filtroVac, setFiltroVac] = useState("");
   const [datosVac, setDatosVac] = useState([]);
   const [cargandoVac, setCargandoVac] = useState(false);
@@ -102,34 +105,40 @@ export default function Reportes() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
-  // Cargar selectores al montar
+  // ── Carga de selectores al montar ───────────────────────
+  // El backend NO tiene /vacunas/tipos ni /vacunas/meses:
+  //   - meses → GET /api/reportes/meses
+  //   - tipos → se extrae del primer fetch de /api/reportes/vacunas (campo por_vacuna)
   useEffect(() => {
-    apiFetch(`${API}/api/reportes/vacunas/meses`)
+    apiFetch(`${API}/api/reportes/meses`)
       .then((d) => {
         if (!d) return;
         setMesesDisponibles(d.meses);
-        if (d.meses.length > 0) setMesVac(d.meses[0].value);
+        if (d.meses.length > 0) setMesVac(d.meses[0].value); // "YYYY-MM"
       })
       .catch(() => setErrorVac("No se pudieron cargar los meses disponibles."));
-
-    apiFetch(`${API}/api/reportes/vacunas/tipos`)
-      .then((d) => {
-        if (d) setTiposVacuna(d.vacunas.map((v) => v.nombre));
-      })
-      .catch(() => {});
   }, []);
 
   // ── Fetch vacunas ───────────────────────────────────────
+  // El backend espera:  GET /api/reportes/vacunas?anio=YYYY&mes=M[&vacuna=nombre]
+  // El backend responde: { ok, por_vacuna: [{vacuna, dosis, pacientes}], resumen, por_dia }
   const fetchVacunas = useCallback(async () => {
     if (!mesVac) return;
     setCargandoVac(true);
     setErrorVac("");
     try {
-      const params = new URLSearchParams({ mes: mesVac });
+      // mesVac es "YYYY-MM" → separar en anio y mes
+      const [anio, mes] = mesVac.split("-");
+      const params = new URLSearchParams({ anio, mes });
       if (filtroVac) params.set("vacuna", filtroVac);
+
       const data = await apiFetch(`${API}/api/reportes/vacunas?${params}`);
       if (data) {
-        setDatosVac(data.datos);
+        setDatosVac(data.por_vacuna); // campo real del backend
+        // Poblar el selector de tipos con la primera respuesta exitosa
+        if (tiposVacuna.length === 0 && data.por_vacuna.length > 0) {
+          setTiposVacuna(data.por_vacuna.map((v) => v.vacuna));
+        }
         setPaginaVac(1);
       }
     } catch (e) {
@@ -138,6 +147,8 @@ export default function Reportes() {
     } finally {
       setCargandoVac(false);
     }
+    // tiposVacuna excluido intencionalmente de las deps para no causar loop infinito
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesVac, filtroVac]);
 
   useEffect(() => {
@@ -145,6 +156,8 @@ export default function Reportes() {
   }, [fetchVacunas]);
 
   // ── Fetch inventario ────────────────────────────────────
+  // El backend espera:  GET /api/reportes/inventario?periodo=mes|3meses|todos[&vacuna=nombre][&tipo=entrada|salida]
+  // El backend responde: { ok, movimientos: [{id,vacuna,tipo,cantidad,lote,fecha,...}], resumen, por_vacuna }
   const fetchInventario = useCallback(async () => {
     setCargandoInv(true);
     setErrorInv("");
@@ -152,9 +165,10 @@ export default function Reportes() {
       const params = new URLSearchParams({ periodo: periodoInv });
       if (filtroInvVac) params.set("vacuna", filtroInvVac);
       if (filtroTipo) params.set("tipo", filtroTipo);
+
       const data = await apiFetch(`${API}/api/reportes/inventario?${params}`);
       if (data) {
-        setDatosInv(data.datos);
+        setDatosInv(data.movimientos); // campo real del backend
         setResumenInv(data.resumen);
         setPaginaInv(1);
       }
@@ -170,11 +184,25 @@ export default function Reportes() {
     if (tab === "inventario") fetchInventario();
   }, [fetchInventario, tab]);
 
-  // ── Paginación calculada ────────────────────────────────
-  const totalDosisVac = datosVac.reduce((a, r) => a + r.dosis, 0);
-  const totalPacientesVac = datosVac.reduce((a, r) => a + r.pacientes, 0);
-  const maxDosis = Math.max(...datosVac.map((r) => r.dosis), 1);
+  // ── Cálculos derivados (memoizados) ─────────────────────
+  const totalDosisVac = useMemo(
+    () => datosVac.reduce((a, r) => a + r.dosis, 0),
+    [datosVac],
+  );
+  const totalPacientesVac = useMemo(
+    () => datosVac.reduce((a, r) => a + r.pacientes, 0),
+    [datosVac],
+  );
+  const maxDosis = useMemo(
+    () => Math.max(...datosVac.map((r) => r.dosis), 1),
+    [datosVac],
+  );
+  const maxMov = useMemo(
+    () => Math.max(...datosInv.map((r) => r.cantidad), 1),
+    [datosInv],
+  );
 
+  // ── Paginación calculada ────────────────────────────────
   const totalPagVac = Math.ceil(datosVac.length / POR_PAGINA);
   const pagVacActual = Math.min(paginaVac, totalPagVac || 1);
   const datosVacPag = datosVac.slice(
@@ -182,7 +210,6 @@ export default function Reportes() {
     pagVacActual * POR_PAGINA,
   );
 
-  const maxMov = Math.max(...datosInv.map((r) => r.cantidad), 1);
   const totalPagInv = Math.ceil(datosInv.length / POR_PAGINA);
   const pagInvActual = Math.min(paginaInv, totalPagInv || 1);
   const datosInvPag = datosInv.slice(
@@ -196,276 +223,290 @@ export default function Reportes() {
 
   // ── Exportar PDF ────────────────────────────────────────
   function exportarPDF() {
-    const doc = new jsPDF();
-    const estaEnVacunas = tab === "vacunas";
+    try {
+      const doc = new jsPDF();
+      const estaEnVacunas = tab === "vacunas";
 
-    doc.setFillColor(2, 62, 138);
-    doc.rect(0, 0, 210, 28, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.text("SISTEMA DE VACUNACIÓN", 14, 11);
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text("ASIC Dr. Tulio Pineda · Municipio Juan Germán Roscio", 14, 18);
-    doc.text(
-      `Generado: ${new Date().toLocaleDateString("es-VE", { day: "2-digit", month: "long", year: "numeric" })}`,
-      14,
-      24,
-    );
-
-    doc.setTextColor(2, 62, 138);
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-
-    if (estaEnVacunas) {
+      doc.setFillColor(2, 62, 138);
+      doc.rect(0, 0, 210, 28, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.text("SISTEMA DE VACUNACIÓN", 14, 11);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text("ASIC Dr. Tulio Pineda · Municipio Juan Germán Roscio", 14, 18);
       doc.text(
-        `REPORTE DE VACUNAS APLICADAS — ${labelMesActual.toUpperCase()}`,
+        `Generado: ${new Date().toLocaleDateString("es-VE", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })}`,
         14,
-        38,
+        24,
       );
-    } else {
-      const pTexto =
-        periodoInv === "mes"
-          ? "ÚLTIMO MES"
-          : periodoInv === "3meses"
-            ? "ÚLTIMOS 3 MESES"
-            : "TODOS LOS PERÍODOS";
-      doc.text(`REPORTE DE MOVIMIENTOS DE INVENTARIO — ${pTexto}`, 14, 38);
-    }
 
-    doc.setDrawColor(0, 119, 182);
-    doc.setLineWidth(0.5);
-    doc.line(14, 41, 196, 41);
+      doc.setTextColor(2, 62, 138);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
 
-    if (estaEnVacunas) {
-      const stats = [
-        { label: "Total dosis aplicadas", valor: totalDosisVac.toString() },
-        { label: "Pacientes atendidos", valor: totalPacientesVac.toString() },
-        { label: "Tipos de vacuna", valor: datosVac.length.toString() },
-      ];
-      stats.forEach((s, i) => {
-        const x = 14 + i * 62;
-        doc.setFillColor(240, 248, 255);
-        doc.roundedRect(x, 45, 58, 16, 2, 2, "F");
-        doc.setTextColor(2, 62, 138);
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "bold");
-        doc.text(s.valor, x + 29, 55, { align: "center" });
-        doc.setFontSize(7);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100, 100, 100);
-        doc.text(s.label, x + 29, 59, { align: "center" });
-      });
-      autoTable(doc, {
-        startY: 67,
-        head: [
-          ["Vacuna", "Dosis aplicadas", "Pacientes atendidos", "% del total"],
-        ],
-        body: datosVac.map((r) => [
-          r.vacuna,
-          r.dosis.toString(),
-          r.pacientes.toString(),
-          totalDosisVac > 0
-            ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
-            : "—",
-        ]),
-        headStyles: {
-          fillColor: [0, 119, 182],
-          textColor: [255, 255, 255],
-          fontStyle: "bold",
-          fontSize: 9,
-        },
-        bodyStyles: { fontSize: 9, textColor: [55, 65, 81] },
-        alternateRowStyles: { fillColor: [240, 248, 255] },
-        columnStyles: {
-          0: { cellWidth: 75 },
-          1: { cellWidth: 38, halign: "center" },
-          2: { cellWidth: 45, halign: "center" },
-          3: { cellWidth: 30, halign: "center" },
-        },
-        foot: [
-          [
-            "TOTAL",
-            totalDosisVac.toString(),
-            totalPacientesVac.toString(),
-            "100%",
+      if (estaEnVacunas) {
+        doc.text(
+          `REPORTE DE VACUNAS APLICADAS — ${labelMesActual.toUpperCase()}`,
+          14,
+          38,
+        );
+      } else {
+        const pTexto =
+          periodoInv === "mes"
+            ? "ÚLTIMO MES"
+            : periodoInv === "3meses"
+              ? "ÚLTIMOS 3 MESES"
+              : "TODOS LOS PERÍODOS";
+        doc.text(`REPORTE DE MOVIMIENTOS DE INVENTARIO — ${pTexto}`, 14, 38);
+      }
+
+      doc.setDrawColor(0, 119, 182);
+      doc.setLineWidth(0.5);
+      doc.line(14, 41, 196, 41);
+
+      if (estaEnVacunas) {
+        const stats = [
+          { label: "Total dosis aplicadas", valor: totalDosisVac.toString() },
+          { label: "Pacientes atendidos", valor: totalPacientesVac.toString() },
+          { label: "Tipos de vacuna", valor: datosVac.length.toString() },
+        ];
+        stats.forEach((s, i) => {
+          const x = 14 + i * 62;
+          doc.setFillColor(240, 248, 255);
+          doc.roundedRect(x, 45, 58, 16, 2, 2, "F");
+          doc.setTextColor(2, 62, 138);
+          doc.setFontSize(14);
+          doc.setFont("helvetica", "bold");
+          doc.text(s.valor, x + 29, 55, { align: "center" });
+          doc.setFontSize(7);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(100, 100, 100);
+          doc.text(s.label, x + 29, 59, { align: "center" });
+        });
+        autoTable(doc, {
+          startY: 67,
+          head: [
+            ["Vacuna", "Dosis aplicadas", "Pacientes atendidos", "% del total"],
           ],
-        ],
-        footStyles: {
-          fillColor: [2, 62, 138],
-          textColor: [255, 255, 255],
-          fontStyle: "bold",
-          fontSize: 9,
-        },
-      });
-    } else {
-      const { entradas, salidas, balance } = resumenInv;
-      const stats = [
-        { label: "Dosis ingresadas", valor: `+${entradas}` },
-        { label: "Dosis consumidas", valor: `-${salidas}` },
-        {
-          label: "Balance neto",
-          valor: `${balance >= 0 ? "+" : ""}${balance}`,
-        },
-      ];
-      stats.forEach((s, i) => {
-        const x = 14 + i * 62;
-        doc.setFillColor(240, 248, 255);
-        doc.roundedRect(x, 45, 58, 16, 2, 2, "F");
-        doc.setTextColor(2, 62, 138);
-        doc.setFontSize(13);
-        doc.setFont("helvetica", "bold");
-        doc.text(s.valor, x + 29, 55, { align: "center" });
+          body: datosVac.map((r) => [
+            r.vacuna,
+            r.dosis.toString(),
+            r.pacientes.toString(),
+            totalDosisVac > 0
+              ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
+              : "—",
+          ]),
+          headStyles: {
+            fillColor: [0, 119, 182],
+            textColor: [255, 255, 255],
+            fontStyle: "bold",
+            fontSize: 9,
+          },
+          bodyStyles: { fontSize: 9, textColor: [55, 65, 81] },
+          alternateRowStyles: { fillColor: [240, 248, 255] },
+          columnStyles: {
+            0: { cellWidth: 75 },
+            1: { cellWidth: 38, halign: "center" },
+            2: { cellWidth: 45, halign: "center" },
+            3: { cellWidth: 30, halign: "center" },
+          },
+          foot: [
+            [
+              "TOTAL",
+              totalDosisVac.toString(),
+              totalPacientesVac.toString(),
+              "100%",
+            ],
+          ],
+          footStyles: {
+            fillColor: [2, 62, 138],
+            textColor: [255, 255, 255],
+            fontStyle: "bold",
+            fontSize: 9,
+          },
+        });
+      } else {
+        const { entradas, salidas, balance } = resumenInv;
+        const stats = [
+          { label: "Dosis ingresadas", valor: `+${entradas}` },
+          { label: "Dosis consumidas", valor: `-${salidas}` },
+          {
+            label: "Balance neto",
+            valor: `${balance >= 0 ? "+" : ""}${balance}`,
+          },
+        ];
+        stats.forEach((s, i) => {
+          const x = 14 + i * 62;
+          doc.setFillColor(240, 248, 255);
+          doc.roundedRect(x, 45, 58, 16, 2, 2, "F");
+          doc.setTextColor(2, 62, 138);
+          doc.setFontSize(13);
+          doc.setFont("helvetica", "bold");
+          doc.text(s.valor, x + 29, 55, { align: "center" });
+          doc.setFontSize(7);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(100, 100, 100);
+          doc.text(s.label, x + 29, 59, { align: "center" });
+        });
+        autoTable(doc, {
+          startY: 67,
+          head: [["Vacuna", "Tipo", "Cantidad", "Lote", "Fecha"]],
+          body: datosInv.map((r) => [
+            r.vacuna,
+            r.tipo === "entrada" ? "↑ Entrada" : "↓ Salida",
+            `${r.tipo === "entrada" ? "+" : "-"}${r.cantidad} dosis`,
+            r.lote || "—",
+            formatFecha(r.fecha),
+          ]),
+          headStyles: {
+            fillColor: [0, 119, 182],
+            textColor: [255, 255, 255],
+            fontStyle: "bold",
+            fontSize: 9,
+          },
+          bodyStyles: { fontSize: 9, textColor: [55, 65, 81] },
+          alternateRowStyles: { fillColor: [240, 248, 255] },
+          columnStyles: {
+            0: { cellWidth: 65 },
+            1: { cellWidth: 28, halign: "center" },
+            2: { cellWidth: 35, halign: "center" },
+            3: { cellWidth: 32, halign: "center" },
+            4: { cellWidth: 28, halign: "center" },
+          },
+        });
+      }
+
+      const totalPags = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPags; i++) {
+        doc.setPage(i);
         doc.setFontSize(7);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100, 100, 100);
-        doc.text(s.label, x + 29, 59, { align: "center" });
-      });
-      autoTable(doc, {
-        startY: 67,
-        head: [["Vacuna", "Tipo", "Cantidad", "Lote", "Fecha"]],
-        body: datosInv.map((r) => [
-          r.vacuna,
-          r.tipo === "entrada" ? "↑ Entrada" : "↓ Salida",
-          `${r.tipo === "entrada" ? "+" : "-"}${r.cantidad} dosis`,
-          r.lote,
-          formatFecha(r.fecha),
-        ]),
-        headStyles: {
-          fillColor: [0, 119, 182],
-          textColor: [255, 255, 255],
-          fontStyle: "bold",
-          fontSize: 9,
-        },
-        bodyStyles: { fontSize: 9, textColor: [55, 65, 81] },
-        alternateRowStyles: { fillColor: [240, 248, 255] },
-        columnStyles: {
-          0: { cellWidth: 65 },
-          1: { cellWidth: 28, halign: "center" },
-          2: { cellWidth: 35, halign: "center" },
-          3: { cellWidth: 32, halign: "center" },
-          4: { cellWidth: 28, halign: "center" },
-        },
-      });
-    }
+        doc.setTextColor(150, 150, 150);
+        doc.setDrawColor(200, 200, 200);
+        doc.line(14, 286, 196, 286);
+        doc.text(
+          `Sistema de Vacunación ASIC Dr. Tulio Pineda — Página ${i} de ${totalPags}`,
+          105,
+          290,
+          { align: "center" },
+        );
+      }
 
-    const totalPags = doc.getNumberOfPages();
-    for (let i = 1; i <= totalPags; i++) {
-      doc.setPage(i);
-      doc.setFontSize(7);
-      doc.setTextColor(150, 150, 150);
-      doc.setDrawColor(200, 200, 200);
-      doc.line(14, 286, 196, 286);
-      doc.text(
-        `Sistema de Vacunación ASIC Dr. Tulio Pineda — Página ${i} de ${totalPags}`,
-        105,
-        290,
-        { align: "center" },
+      doc.save(
+        estaEnVacunas
+          ? `reporte_vacunas_${mesVac}.pdf`
+          : `reporte_inventario_${new Date().toISOString().split("T")[0]}.pdf`,
       );
+    } catch (err) {
+      console.error("[exportarPDF]", err);
+      alert("No se pudo generar el PDF. Intente nuevamente.");
     }
-
-    doc.save(
-      estaEnVacunas
-        ? `reporte_vacunas_${mesVac}.pdf`
-        : `reporte_inventario_${new Date().toISOString().split("T")[0]}.pdf`,
-    );
   }
 
   // ── Exportar Excel ──────────────────────────────────────
   function exportarExcel() {
-    const estaEnVacunas = tab === "vacunas";
-    const wb = XLSX.utils.book_new();
-    const hoy = new Date().toLocaleDateString("es-VE");
+    try {
+      const estaEnVacunas = tab === "vacunas";
+      const wb = XLSX.utils.book_new();
+      const hoy = new Date().toLocaleDateString("es-VE");
 
-    if (estaEnVacunas) {
-      const filas = [
-        ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", ""],
-        [`Reporte de vacunas aplicadas — ${labelMesActual}`, "", "", ""],
-        [`Generado: ${hoy}`, "", "", ""],
-        [],
-        ["VACUNA", "DOSIS APLICADAS", "PACIENTES ATENDIDOS", "% DEL TOTAL"],
-        ...datosVac.map((r) => [
-          r.vacuna,
-          r.dosis,
-          r.pacientes,
-          totalDosisVac > 0
-            ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
-            : "—",
-        ]),
-        [],
-        ["TOTAL", totalDosisVac, totalPacientesVac, "100%"],
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(filas);
-      ws["!cols"] = [{ wch: 32 }, { wch: 18 }, { wch: 22 }, { wch: 14 }];
-      ws["!merges"] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } },
-      ];
-      XLSX.utils.book_append_sheet(wb, ws, "Vacunas aplicadas");
+      if (estaEnVacunas) {
+        const filas = [
+          ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", ""],
+          [`Reporte de vacunas aplicadas — ${labelMesActual}`, "", "", ""],
+          [`Generado: ${hoy}`, "", "", ""],
+          [],
+          ["VACUNA", "DOSIS APLICADAS", "PACIENTES ATENDIDOS", "% DEL TOTAL"],
+          ...datosVac.map((r) => [
+            r.vacuna,
+            r.dosis,
+            r.pacientes,
+            totalDosisVac > 0
+              ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
+              : "—",
+          ]),
+          [],
+          ["TOTAL", totalDosisVac, totalPacientesVac, "100%"],
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(filas);
+        ws["!cols"] = [{ wch: 32 }, { wch: 18 }, { wch: 22 }, { wch: 14 }];
+        ws["!merges"] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } },
+        ];
+        XLSX.utils.book_append_sheet(wb, ws, "Vacunas aplicadas");
 
-      const resumen = [
-        ["RESUMEN DEL PERÍODO", ""],
-        [],
-        ["Indicador", "Valor"],
-        ["Período", labelMesActual],
-        ["Total dosis", totalDosisVac],
-        ["Total pacientes", totalPacientesVac],
-        ["Tipos de vacuna", datosVac.length],
-        [
-          "Vacuna más aplicada",
-          [...datosVac].sort((a, b) => b.dosis - a.dosis)[0]?.vacuna || "—",
-        ],
-        ["Fecha de generación", hoy],
-      ];
-      const wsR = XLSX.utils.aoa_to_sheet(resumen);
-      wsR["!cols"] = [{ wch: 24 }, { wch: 20 }];
-      XLSX.utils.book_append_sheet(wb, wsR, "Resumen");
-    } else {
-      const { entradas, salidas, balance } = resumenInv;
-      const filas = [
-        ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", "", ""],
-        ["Reporte de movimientos de inventario", "", "", "", ""],
-        [`Generado: ${hoy}`, "", "", "", ""],
-        [],
-        ["VACUNA", "TIPO", "CANTIDAD", "LOTE", "FECHA"],
-        ...datosInv.map((r) => [
-          r.vacuna,
-          r.tipo === "entrada" ? "Entrada" : "Salida",
-          r.tipo === "entrada" ? r.cantidad : -r.cantidad,
-          r.lote,
-          formatFecha(r.fecha),
-        ]),
-        [],
-        ["RESUMEN", "", "", "", ""],
-        ["Total entradas", entradas, "", "", ""],
-        ["Total salidas", salidas, "", "", ""],
-        ["Balance neto", balance, "", "", ""],
-        ["Fecha", hoy, "", "", ""],
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(filas);
-      ws["!cols"] = [
-        { wch: 30 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 16 },
-        { wch: 14 },
-      ];
-      ws["!merges"] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } },
-      ];
-      XLSX.utils.book_append_sheet(wb, ws, "Movimientos inventario");
+        const resumen = [
+          ["RESUMEN DEL PERÍODO", ""],
+          [],
+          ["Indicador", "Valor"],
+          ["Período", labelMesActual],
+          ["Total dosis", totalDosisVac],
+          ["Total pacientes", totalPacientesVac],
+          ["Tipos de vacuna", datosVac.length],
+          [
+            "Vacuna más aplicada",
+            [...datosVac].sort((a, b) => b.dosis - a.dosis)[0]?.vacuna || "—",
+          ],
+          ["Fecha de generación", hoy],
+        ];
+        const wsR = XLSX.utils.aoa_to_sheet(resumen);
+        wsR["!cols"] = [{ wch: 24 }, { wch: 20 }];
+        XLSX.utils.book_append_sheet(wb, wsR, "Resumen");
+      } else {
+        const { entradas, salidas, balance } = resumenInv;
+        const filas = [
+          ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", "", ""],
+          ["Reporte de movimientos de inventario", "", "", "", ""],
+          [`Generado: ${hoy}`, "", "", "", ""],
+          [],
+          ["VACUNA", "TIPO", "CANTIDAD", "LOTE", "FECHA"],
+          ...datosInv.map((r) => [
+            r.vacuna,
+            r.tipo === "entrada" ? "Entrada" : "Salida",
+            r.tipo === "entrada" ? r.cantidad : -r.cantidad,
+            r.lote || "—",
+            formatFecha(r.fecha),
+          ]),
+          [],
+          ["RESUMEN", "", "", "", ""],
+          ["Total entradas", entradas, "", "", ""],
+          ["Total salidas", salidas, "", "", ""],
+          ["Balance neto", balance, "", "", ""],
+          ["Fecha", hoy, "", "", ""],
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(filas);
+        ws["!cols"] = [
+          { wch: 30 },
+          { wch: 12 },
+          { wch: 12 },
+          { wch: 16 },
+          { wch: 14 },
+        ];
+        ws["!merges"] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } },
+        ];
+        XLSX.utils.book_append_sheet(wb, ws, "Movimientos inventario");
+      }
+
+      XLSX.writeFile(
+        wb,
+        tab === "vacunas"
+          ? `reporte_vacunas_${mesVac}.xlsx`
+          : `reporte_inventario_${new Date().toISOString().split("T")[0]}.xlsx`,
+      );
+    } catch (err) {
+      console.error("[exportarExcel]", err);
+      alert("No se pudo generar el Excel. Intente nuevamente.");
     }
-
-    XLSX.writeFile(
-      wb,
-      tab === "vacunas"
-        ? `reporte_vacunas_${mesVac}.xlsx`
-        : `reporte_inventario_${new Date().toISOString().split("T")[0]}.xlsx`,
-    );
   }
 
   const iniciales = usuario?.nombre
@@ -497,7 +538,9 @@ export default function Reportes() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-blue-900 flex flex-col z-30 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 lg:w-60`}
+        className={`fixed top-0 left-0 h-full w-64 bg-blue-900 flex flex-col z-30 transition-transform duration-300 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } lg:translate-x-0 lg:w-60`}
       >
         <div className="flex items-center justify-between px-4 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -525,7 +568,11 @@ export default function Reportes() {
                 setSidebarOpen(false);
                 navigate(item.ruta);
               }}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition text-left touch-manipulation ${item.activo ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"}`}
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition text-left touch-manipulation ${
+                item.activo
+                  ? "bg-white/15 text-white"
+                  : "text-white/55 hover:bg-white/10 hover:text-white"
+              }`}
             >
               <span className="w-5 h-5 flex-shrink-0">
                 {item.label === "Inicio" && <IcoHome />}
@@ -600,7 +647,11 @@ export default function Reportes() {
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition touch-manipulation whitespace-nowrap ${tab === t.key ? "bg-blue-600 text-white shadow-sm" : "text-blue-700 hover:bg-blue-100"}`}
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition touch-manipulation whitespace-nowrap ${
+                  tab === t.key
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-blue-700 hover:bg-blue-100"
+                }`}
               >
                 {t.label}
               </button>
@@ -713,7 +764,8 @@ export default function Reportes() {
                                 className="w-full rounded-t-lg transition-all duration-700"
                                 style={{
                                   height: `${Math.max(8, (r.dosis / maxDosis) * 100)}px`,
-                                  background: BAR_COLOR[r.vacuna] || "#dc2626",
+                                  // Gris neutro para vacunas sin color asignado (evita el rojo engañoso)
+                                  background: BAR_COLOR[r.vacuna] || "#6b7280",
                                 }}
                               />
                               <span className="text-xs text-gray-400 text-center leading-tight">
@@ -779,7 +831,7 @@ export default function Reportes() {
                                         style={{
                                           width: `${(r.dosis / maxDosis) * 100}%`,
                                           background:
-                                            BAR_COLOR[r.vacuna] || "#dc2626",
+                                            BAR_COLOR[r.vacuna] || "#6b7280",
                                         }}
                                       />
                                     </div>
@@ -921,9 +973,10 @@ export default function Reportes() {
                     ) : (
                       <div className="overflow-x-auto">
                         <div className="flex items-end gap-2 sm:gap-3 h-36 min-w-[320px] pb-1">
-                          {datosInv.slice(0, 10).map((r, i) => (
+                          {datosInv.slice(0, 10).map((r) => (
+                            // key estable: id único del movimiento en lugar del índice
                             <div
-                              key={i}
+                              key={r.id}
                               className="flex-1 flex flex-col items-center gap-1 min-w-[36px]"
                             >
                               <span className="text-xs font-semibold text-gray-700">
@@ -936,7 +989,7 @@ export default function Reportes() {
                                   background:
                                     r.tipo === "entrada"
                                       ? "#16a34a"
-                                      : "#dc2626",
+                                      : "#3b82f6",
                                 }}
                               />
                               <span className="text-xs text-gray-400 text-center leading-tight">
@@ -992,7 +1045,11 @@ export default function Reportes() {
                                 </td>
                                 <td className="px-4 py-3">
                                   <span
-                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold ${r.tipo === "entrada" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}
+                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                      r.tipo === "entrada"
+                                        ? "bg-green-100 text-green-700"
+                                        : "bg-blue-100 text-blue-700"
+                                    }`}
                                   >
                                     {r.tipo === "entrada"
                                       ? "↑ Entrada"
@@ -1015,7 +1072,7 @@ export default function Reportes() {
                                   </span>
                                 </td>
                                 <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                                  {r.lote}
+                                  {r.lote || "—"}
                                 </td>
                                 <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                                   {formatFecha(r.fecha)}
@@ -1149,7 +1206,11 @@ function Paginacion({
             <button
               key={n}
               onClick={() => setPagina(n)}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-semibold transition border ${n === paginaActual ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"}`}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-semibold transition border ${
+                n === paginaActual
+                  ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                  : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"
+              }`}
             >
               {n}
             </button>
