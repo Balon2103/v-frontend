@@ -1,175 +1,33 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
-// ── Datos de demostración ───────────────────────────────────
-const VACUNAS_POR_MES = {
-  "2025-04": [
-    { vacuna: "BCG", dosis: 48, pacientes: 48 },
-    { vacuna: "Polio Inyectable (IPV)", dosis: 35, pacientes: 30 },
-    { vacuna: "Polio Oral", dosis: 41, pacientes: 35 },
-    { vacuna: "Pentavalente", dosis: 52, pacientes: 42 },
-    { vacuna: "Hepatitis B", dosis: 28, pacientes: 25 },
-    { vacuna: "SRP", dosis: 19, pacientes: 18 },
-    { vacuna: "Fiebre Amarilla", dosis: 15, pacientes: 15 },
-    { vacuna: "Toxoide", dosis: 10, pacientes: 8 },
-  ],
-  "2025-03": [
-    { vacuna: "BCG", dosis: 40, pacientes: 40 },
-    { vacuna: "Polio Inyectable (IPV)", dosis: 28, pacientes: 24 },
-    { vacuna: "Polio Oral", dosis: 33, pacientes: 28 },
-    { vacuna: "Pentavalente", dosis: 45, pacientes: 38 },
-    { vacuna: "Hepatitis B", dosis: 22, pacientes: 20 },
-    { vacuna: "SRP", dosis: 14, pacientes: 13 },
-    { vacuna: "Fiebre Amarilla", dosis: 11, pacientes: 11 },
-    { vacuna: "Toxoide", dosis: 8, pacientes: 6 },
-  ],
-  "2025-02": [
-    { vacuna: "BCG", dosis: 35, pacientes: 35 },
-    { vacuna: "Polio Inyectable (IPV)", dosis: 22, pacientes: 19 },
-    { vacuna: "Polio Oral", dosis: 27, pacientes: 23 },
-    { vacuna: "Pentavalente", dosis: 38, pacientes: 32 },
-    { vacuna: "Hepatitis B", dosis: 18, pacientes: 16 },
-    { vacuna: "SRP", dosis: 10, pacientes: 10 },
-    { vacuna: "Fiebre Amarilla", dosis: 8, pacientes: 8 },
-    { vacuna: "Toxoide", dosis: 5, pacientes: 4 },
-  ],
-};
 
-const MOVIMIENTOS = [
-  {
-    id: 1,
-    vacuna: "BCG",
-    tipo: "entrada",
-    cantidad: 100,
-    lote: "BCG-003",
-    fecha: "2025-04-05",
-  },
-  {
-    id: 2,
-    vacuna: "Hepatitis B",
-    tipo: "entrada",
-    cantidad: 80,
-    lote: "HB-013",
-    fecha: "2025-04-02",
-  },
-  {
-    id: 3,
-    vacuna: "Polio Inyectable (IPV)",
-    tipo: "entrada",
-    cantidad: 50,
-    lote: "IPV-008",
-    fecha: "2025-04-09",
-  },
-  {
-    id: 4,
-    vacuna: "Fiebre Amarilla",
-    tipo: "entrada",
-    cantidad: 50,
-    lote: "FA-024",
-    fecha: "2025-04-07",
-  },
-  {
-    id: 5,
-    vacuna: "Toxoide",
-    tipo: "entrada",
-    cantidad: 40,
-    lote: "TX-006",
-    fecha: "2025-04-08",
-  },
-  {
-    id: 6,
-    vacuna: "Pentavalente",
-    tipo: "salida",
-    cantidad: 52,
-    lote: "PV-044",
-    fecha: "2025-04-10",
-  },
-  {
-    id: 7,
-    vacuna: "SRP",
-    tipo: "salida",
-    cantidad: 19,
-    lote: "SRP-020",
-    fecha: "2025-04-11",
-  },
-  {
-    id: 8,
-    vacuna: "BCG",
-    tipo: "salida",
-    cantidad: 48,
-    lote: "BCG-003",
-    fecha: "2025-04-12",
-  },
-  {
-    id: 9,
-    vacuna: "Polio Oral",
-    tipo: "salida",
-    cantidad: 41,
-    lote: "PO-034",
-    fecha: "2025-04-13",
-  },
-  {
-    id: 10,
-    vacuna: "Hepatitis B",
-    tipo: "salida",
-    cantidad: 28,
-    lote: "HB-013",
-    fecha: "2025-04-14",
-  },
-  {
-    id: 11,
-    vacuna: "BCG",
-    tipo: "entrada",
-    cantidad: 80,
-    lote: "BCG-002",
-    fecha: "2025-03-10",
-  },
-  {
-    id: 12,
-    vacuna: "Pentavalente",
-    tipo: "entrada",
-    cantidad: 60,
-    lote: "PV-043",
-    fecha: "2025-03-12",
-  },
-  {
-    id: 13,
-    vacuna: "Polio Oral",
-    tipo: "salida",
-    cantidad: 33,
-    lote: "PO-033",
-    fecha: "2025-03-15",
-  },
-  {
-    id: 14,
-    vacuna: "SRP",
-    tipo: "entrada",
-    cantidad: 30,
-    lote: "SRP-019",
-    fecha: "2025-03-18",
-  },
-];
+// ── Config API ──────────────────────────────────────────────
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
-const MESES = [
-  { value: "2025-04", label: "Abril 2025" },
-  { value: "2025-03", label: "Marzo 2025" },
-  { value: "2025-02", label: "Febrero 2025" },
-];
+function authHeaders() {
+  const token = localStorage.getItem("token");
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+}
 
-const TIPOS_VACUNA = [
-  "BCG",
-  "Polio Inyectable (IPV)",
-  "Polio Oral",
-  "Pentavalente",
-  "Hepatitis B",
-  "SRP",
-  "Fiebre Amarilla",
-  "Toxoide",
-];
+async function apiFetch(url) {
+  const res = await fetch(url, { headers: authHeaders() });
+  if (res.status === 401) {
+    localStorage.clear();
+    window.location.href = "/login";
+    return null;
+  }
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.mensaje || "Error del servidor");
+  return data;
+}
 
-// Colores de barras por vacuna
+// ── Helpers ─────────────────────────────────────────────────
 const BAR_COLOR = {
   BCG: "#1d4ed8",
   "Polio Inyectable (IPV)": "#2563eb",
@@ -180,14 +38,11 @@ const BAR_COLOR = {
   "Fiebre Amarilla": "#93c5fd",
   Toxoide: "#172554",
 };
+
 function formatFecha(f) {
   if (!f) return "—";
   const [y, m, d] = f.split("-");
   return `${d}/${m}/${y}`;
-}
-
-function formatMes(v) {
-  return MESES.find((m) => m.value === v)?.label || v;
 }
 
 const POR_PAGINA = 10;
@@ -200,19 +55,35 @@ export default function Reportes() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tab, setTab] = useState("vacunas");
 
-  // Filtros vacunas
-  const [mesVac, setMesVac] = useState("2025-04");
-  const [filtroVac, setFiltroVac] = useState("");
+  // ── Datos del servidor ──────────────────────────────────
+  const [mesesDisponibles, setMesesDisponibles] = useState([]);
+  const [tiposVacuna, setTiposVacuna] = useState([]);
 
-  // Filtros inventario
+  // Vacunas
+  const [mesVac, setMesVac] = useState("");
+  const [filtroVac, setFiltroVac] = useState("");
+  const [datosVac, setDatosVac] = useState([]);
+  const [cargandoVac, setCargandoVac] = useState(false);
+  const [errorVac, setErrorVac] = useState("");
+
+  // Inventario
   const [periodoInv, setPeriodoInv] = useState("mes");
   const [filtroInvVac, setFiltroInvVac] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
+  const [datosInv, setDatosInv] = useState([]);
+  const [resumenInv, setResumenInv] = useState({
+    entradas: 0,
+    salidas: 0,
+    balance: 0,
+  });
+  const [cargandoInv, setCargandoInv] = useState(false);
+  const [errorInv, setErrorInv] = useState("");
 
   // Paginación
   const [paginaVac, setPaginaVac] = useState(1);
   const [paginaInv, setPaginaInv] = useState(1);
 
+  // ── Auth + carga inicial ────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem("token");
     const u = localStorage.getItem("usuario");
@@ -231,12 +102,75 @@ export default function Reportes() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
-  // ── Datos vacunas filtrados ─────────────────────────────
-  const datosVac = useMemo(() => {
-    const base = VACUNAS_POR_MES[mesVac] || [];
-    return filtroVac ? base.filter((r) => r.vacuna === filtroVac) : base;
+  // Cargar selectores al montar
+  useEffect(() => {
+    apiFetch(`${API}/reportes/vacunas/meses`)
+      .then((d) => {
+        if (!d) return;
+        setMesesDisponibles(d.meses);
+        if (d.meses.length > 0) setMesVac(d.meses[0].value);
+      })
+      .catch(() => setErrorVac("No se pudieron cargar los meses disponibles."));
+
+    apiFetch(`${API}/reportes/vacunas/tipos`)
+      .then((d) => {
+        if (d) setTiposVacuna(d.vacunas.map((v) => v.nombre));
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Fetch vacunas ───────────────────────────────────────
+  const fetchVacunas = useCallback(async () => {
+    if (!mesVac) return;
+    setCargandoVac(true);
+    setErrorVac("");
+    try {
+      const params = new URLSearchParams({ mes: mesVac });
+      if (filtroVac) params.set("vacuna", filtroVac);
+      const data = await apiFetch(`${API}/reportes/vacunas?${params}`);
+      if (data) {
+        setDatosVac(data.datos);
+        setPaginaVac(1);
+      }
+    } catch (e) {
+      setErrorVac(e.message);
+      setDatosVac([]);
+    } finally {
+      setCargandoVac(false);
+    }
   }, [mesVac, filtroVac]);
 
+  useEffect(() => {
+    fetchVacunas();
+  }, [fetchVacunas]);
+
+  // ── Fetch inventario ────────────────────────────────────
+  const fetchInventario = useCallback(async () => {
+    setCargandoInv(true);
+    setErrorInv("");
+    try {
+      const params = new URLSearchParams({ periodo: periodoInv });
+      if (filtroInvVac) params.set("vacuna", filtroInvVac);
+      if (filtroTipo) params.set("tipo", filtroTipo);
+      const data = await apiFetch(`${API}/reportes/inventario?${params}`);
+      if (data) {
+        setDatosInv(data.datos);
+        setResumenInv(data.resumen);
+        setPaginaInv(1);
+      }
+    } catch (e) {
+      setErrorInv(e.message);
+      setDatosInv([]);
+    } finally {
+      setCargandoInv(false);
+    }
+  }, [periodoInv, filtroInvVac, filtroTipo]);
+
+  useEffect(() => {
+    if (tab === "inventario") fetchInventario();
+  }, [fetchInventario, tab]);
+
+  // ── Paginación calculada ────────────────────────────────
   const totalDosisVac = datosVac.reduce((a, r) => a + r.dosis, 0);
   const totalPacientesVac = datosVac.reduce((a, r) => a + r.pacientes, 0);
   const maxDosis = Math.max(...datosVac.map((r) => r.dosis), 1);
@@ -248,30 +182,7 @@ export default function Reportes() {
     pagVacActual * POR_PAGINA,
   );
 
-  useEffect(() => {
-    setPaginaVac(1);
-  }, [mesVac, filtroVac]);
-
-  // ── Datos inventario filtrados ──────────────────────────
-  const datosInv = useMemo(() => {
-    let base = [...MOVIMIENTOS];
-    if (periodoInv === "mes")
-      base = base.filter((r) => r.fecha.startsWith("2025-04"));
-    else if (periodoInv === "3meses")
-      base = base.filter((r) => r.fecha >= "2025-02-01");
-    if (filtroInvVac) base = base.filter((r) => r.vacuna === filtroInvVac);
-    if (filtroTipo) base = base.filter((r) => r.tipo === filtroTipo);
-    return base;
-  }, [periodoInv, filtroInvVac, filtroTipo]);
-
-  const entradas = datosInv
-    .filter((r) => r.tipo === "entrada")
-    .reduce((a, r) => a + r.cantidad, 0);
-  const salidas = datosInv
-    .filter((r) => r.tipo === "salida")
-    .reduce((a, r) => a + r.cantidad, 0);
   const maxMov = Math.max(...datosInv.map((r) => r.cantidad), 1);
-
   const totalPagInv = Math.ceil(datosInv.length / POR_PAGINA);
   const pagInvActual = Math.min(paginaInv, totalPagInv || 1);
   const datosInvPag = datosInv.slice(
@@ -279,17 +190,15 @@ export default function Reportes() {
     pagInvActual * POR_PAGINA,
   );
 
-  useEffect(() => {
-    setPaginaInv(1);
-  }, [periodoInv, filtroInvVac, filtroTipo]);
+  // ── Nombre del mes para mostrar ─────────────────────────
+  const labelMesActual =
+    mesesDisponibles.find((m) => m.value === mesVac)?.label || mesVac;
 
-  // ── Exportación simulada ────────────────────────────────
-  // ── Exportar PDF ──────────────────────────────────────────
+  // ── Exportar PDF ────────────────────────────────────────
   function exportarPDF() {
     const doc = new jsPDF();
     const estaEnVacunas = tab === "vacunas";
 
-    // Encabezado azul
     doc.setFillColor(2, 62, 138);
     doc.rect(0, 0, 210, 28, "F");
     doc.setTextColor(255, 255, 255);
@@ -300,23 +209,18 @@ export default function Reportes() {
     doc.setFont("helvetica", "normal");
     doc.text("ASIC Dr. Tulio Pineda · Municipio Juan Germán Roscio", 14, 18);
     doc.text(
-      `Generado: ${new Date().toLocaleDateString("es-VE", {
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      })}`,
+      `Generado: ${new Date().toLocaleDateString("es-VE", { day: "2-digit", month: "long", year: "numeric" })}`,
       14,
       24,
     );
 
-    // Título del reporte
     doc.setTextColor(2, 62, 138);
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
 
     if (estaEnVacunas) {
       doc.text(
-        `REPORTE DE VACUNAS APLICADAS — ${formatMes(mesVac).toUpperCase()}`,
+        `REPORTE DE VACUNAS APLICADAS — ${labelMesActual.toUpperCase()}`,
         14,
         38,
       );
@@ -330,18 +234,14 @@ export default function Reportes() {
       doc.text(`REPORTE DE MOVIMIENTOS DE INVENTARIO — ${pTexto}`, 14, 38);
     }
 
-    // Línea decorativa
     doc.setDrawColor(0, 119, 182);
     doc.setLineWidth(0.5);
     doc.line(14, 41, 196, 41);
 
-    // Tarjetas de resumen
     if (estaEnVacunas) {
-      const totalDosis = datosVac.reduce((a, r) => a + r.dosis, 0);
-      const totalPacientes = datosVac.reduce((a, r) => a + r.pacientes, 0);
       const stats = [
-        { label: "Total dosis aplicadas", valor: totalDosis.toString() },
-        { label: "Pacientes atendidos", valor: totalPacientes.toString() },
+        { label: "Total dosis aplicadas", valor: totalDosisVac.toString() },
+        { label: "Pacientes atendidos", valor: totalPacientesVac.toString() },
         { label: "Tipos de vacuna", valor: datosVac.length.toString() },
       ];
       stats.forEach((s, i) => {
@@ -357,8 +257,6 @@ export default function Reportes() {
         doc.setTextColor(100, 100, 100);
         doc.text(s.label, x + 29, 59, { align: "center" });
       });
-
-      // Tabla vacunas
       autoTable(doc, {
         startY: 67,
         head: [
@@ -368,8 +266,8 @@ export default function Reportes() {
           r.vacuna,
           r.dosis.toString(),
           r.pacientes.toString(),
-          totalDosis > 0
-            ? `${((r.dosis / totalDosis) * 100).toFixed(1)}%`
+          totalDosisVac > 0
+            ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
             : "—",
         ]),
         headStyles: {
@@ -387,7 +285,12 @@ export default function Reportes() {
           3: { cellWidth: 30, halign: "center" },
         },
         foot: [
-          ["TOTAL", totalDosis.toString(), totalPacientes.toString(), "100%"],
+          [
+            "TOTAL",
+            totalDosisVac.toString(),
+            totalPacientesVac.toString(),
+            "100%",
+          ],
         ],
         footStyles: {
           fillColor: [2, 62, 138],
@@ -397,19 +300,13 @@ export default function Reportes() {
         },
       });
     } else {
-      // Inventario
-      const entradas = datosInv
-        .filter((r) => r.tipo === "entrada")
-        .reduce((a, r) => a + r.cantidad, 0);
-      const salidas = datosInv
-        .filter((r) => r.tipo === "salida")
-        .reduce((a, r) => a + r.cantidad, 0);
+      const { entradas, salidas, balance } = resumenInv;
       const stats = [
         { label: "Dosis ingresadas", valor: `+${entradas}` },
         { label: "Dosis consumidas", valor: `-${salidas}` },
         {
           label: "Balance neto",
-          valor: `${entradas - salidas >= 0 ? "+" : ""}${entradas - salidas}`,
+          valor: `${balance >= 0 ? "+" : ""}${balance}`,
         },
       ];
       stats.forEach((s, i) => {
@@ -425,7 +322,6 @@ export default function Reportes() {
         doc.setTextColor(100, 100, 100);
         doc.text(s.label, x + 29, 59, { align: "center" });
       });
-
       autoTable(doc, {
         startY: 67,
         head: [["Vacuna", "Tipo", "Cantidad", "Lote", "Fecha"]],
@@ -454,7 +350,6 @@ export default function Reportes() {
       });
     }
 
-    // Pie de página
     const totalPags = doc.getNumberOfPages();
     for (let i = 1; i <= totalPags; i++) {
       doc.setPage(i);
@@ -470,26 +365,23 @@ export default function Reportes() {
       );
     }
 
-    // Descargar
-    const nombre = estaEnVacunas
-      ? `reporte_vacunas_${mesVac}.pdf`
-      : `reporte_inventario_${new Date().toISOString().split("T")[0]}.pdf`;
-    doc.save(nombre);
+    doc.save(
+      estaEnVacunas
+        ? `reporte_vacunas_${mesVac}.pdf`
+        : `reporte_inventario_${new Date().toISOString().split("T")[0]}.pdf`,
+    );
   }
 
-  // ── Exportar Excel ─────────────────────────────────────────
+  // ── Exportar Excel ──────────────────────────────────────
   function exportarExcel() {
     const estaEnVacunas = tab === "vacunas";
     const wb = XLSX.utils.book_new();
     const hoy = new Date().toLocaleDateString("es-VE");
 
     if (estaEnVacunas) {
-      const totalDosis = datosVac.reduce((a, r) => a + r.dosis, 0);
-      const totalPacientes = datosVac.reduce((a, r) => a + r.pacientes, 0);
-
       const filas = [
         ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", ""],
-        [`Reporte de vacunas aplicadas — ${formatMes(mesVac)}`, "", "", ""],
+        [`Reporte de vacunas aplicadas — ${labelMesActual}`, "", "", ""],
         [`Generado: ${hoy}`, "", "", ""],
         [],
         ["VACUNA", "DOSIS APLICADAS", "PACIENTES ATENDIDOS", "% DEL TOTAL"],
@@ -497,14 +389,13 @@ export default function Reportes() {
           r.vacuna,
           r.dosis,
           r.pacientes,
-          totalDosis > 0
-            ? `${((r.dosis / totalDosis) * 100).toFixed(1)}%`
+          totalDosisVac > 0
+            ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
             : "—",
         ]),
         [],
-        ["TOTAL", totalDosis, totalPacientes, "100%"],
+        ["TOTAL", totalDosisVac, totalPacientesVac, "100%"],
       ];
-
       const ws = XLSX.utils.aoa_to_sheet(filas);
       ws["!cols"] = [{ wch: 32 }, { wch: 18 }, { wch: 22 }, { wch: 14 }];
       ws["!merges"] = [
@@ -514,14 +405,13 @@ export default function Reportes() {
       ];
       XLSX.utils.book_append_sheet(wb, ws, "Vacunas aplicadas");
 
-      // Hoja resumen
       const resumen = [
         ["RESUMEN DEL PERÍODO", ""],
         [],
         ["Indicador", "Valor"],
-        ["Período", formatMes(mesVac)],
-        ["Total dosis", totalDosis],
-        ["Total pacientes", totalPacientes],
+        ["Período", labelMesActual],
+        ["Total dosis", totalDosisVac],
+        ["Total pacientes", totalPacientesVac],
         ["Tipos de vacuna", datosVac.length],
         [
           "Vacuna más aplicada",
@@ -533,13 +423,7 @@ export default function Reportes() {
       wsR["!cols"] = [{ wch: 24 }, { wch: 20 }];
       XLSX.utils.book_append_sheet(wb, wsR, "Resumen");
     } else {
-      const entradas = datosInv
-        .filter((r) => r.tipo === "entrada")
-        .reduce((a, r) => a + r.cantidad, 0);
-      const salidas = datosInv
-        .filter((r) => r.tipo === "salida")
-        .reduce((a, r) => a + r.cantidad, 0);
-
+      const { entradas, salidas, balance } = resumenInv;
       const filas = [
         ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", "", ""],
         ["Reporte de movimientos de inventario", "", "", "", ""],
@@ -557,10 +441,9 @@ export default function Reportes() {
         ["RESUMEN", "", "", "", ""],
         ["Total entradas", entradas, "", "", ""],
         ["Total salidas", salidas, "", "", ""],
-        ["Balance neto", entradas - salidas, "", "", ""],
+        ["Balance neto", balance, "", "", ""],
         ["Fecha", hoy, "", "", ""],
       ];
-
       const ws = XLSX.utils.aoa_to_sheet(filas);
       ws["!cols"] = [
         { wch: 30 },
@@ -577,11 +460,12 @@ export default function Reportes() {
       XLSX.utils.book_append_sheet(wb, ws, "Movimientos inventario");
     }
 
-    // Descargar
-    const nombre = estaEnVacunas
-      ? `reporte_vacunas_${mesVac}.xlsx`
-      : `reporte_inventario_${new Date().toISOString().split("T")[0]}.xlsx`;
-    XLSX.writeFile(wb, nombre);
+    XLSX.writeFile(
+      wb,
+      tab === "vacunas"
+        ? `reporte_vacunas_${mesVac}.xlsx`
+        : `reporte_inventario_${new Date().toISOString().split("T")[0]}.xlsx`,
+    );
   }
 
   const iniciales = usuario?.nombre
@@ -601,6 +485,7 @@ export default function Reportes() {
     { label: "Perfil", ruta: "/perfil", activo: false },
   ];
 
+  // ── Render ──────────────────────────────────────────────
   return (
     <div className="min-h-screen flex bg-blue-50">
       {sidebarOpen && (
@@ -610,12 +495,9 @@ export default function Reportes() {
         />
       )}
 
-      {/* ── Sidebar ─────────────────────────────────────── */}
+      {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-blue-900
-                        flex flex-col z-30 transition-transform duration-300
-                        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-                        lg:translate-x-0 lg:w-60`}
+        className={`fixed top-0 left-0 h-full w-64 bg-blue-900 flex flex-col z-30 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 lg:w-60`}
       >
         <div className="flex items-center justify-between px-4 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -643,9 +525,7 @@ export default function Reportes() {
                 setSidebarOpen(false);
                 navigate(item.ruta);
               }}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg
-                         text-sm font-medium transition text-left touch-manipulation
-                         ${item.activo ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"}`}
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition text-left touch-manipulation ${item.activo ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"}`}
             >
               <span className="w-5 h-5 flex-shrink-0">
                 {item.label === "Inicio" && <IcoHome />}
@@ -664,10 +544,7 @@ export default function Reportes() {
 
         <div className="border-t border-white/10 px-4 py-4">
           <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 bg-white rounded-full flex items-center
-                            justify-center text-blue-600 font-bold text-sm flex-shrink-0"
-            >
+            <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center text-blue-600 font-bold text-sm flex-shrink-0">
               {iniciales}
             </div>
             <div className="min-w-0 flex-1">
@@ -689,13 +566,9 @@ export default function Reportes() {
         </div>
       </aside>
 
-      {/* ── Contenido ───────────────────────────────────── */}
+      {/* Contenido */}
       <div className="flex-1 flex flex-col min-w-0 lg:ml-60">
-        {/* Topbar móvil */}
-        <header
-          className="lg:hidden sticky top-0 z-10 bg-blue-900 border-b border-white/10
-                           px-4 py-3 flex items-center justify-between"
-        >
+        <header className="lg:hidden sticky top-0 z-10 bg-blue-900 border-b border-white/10 px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => setSidebarOpen(true)}
             className="text-white p-1 touch-manipulation"
@@ -703,16 +576,12 @@ export default function Reportes() {
             <IcoMenu />
           </button>
           <span className="text-white text-sm font-semibold">Reportes</span>
-          <div
-            className="w-9 h-9 bg-white rounded-full flex items-center justify-center
-                          text-blue-600 font-bold text-xs"
-          >
+          <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center text-blue-600 font-bold text-xs">
             {iniciales}
           </div>
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
-          {/* Encabezado */}
           <div className="mb-6">
             <h1 className="text-xl sm:text-2xl font-bold text-blue-900">
               Reportes y estadísticas
@@ -731,46 +600,40 @@ export default function Reportes() {
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium
-                           transition touch-manipulation whitespace-nowrap
-                           ${
-                             tab === t.key
-                               ? "bg-blue-600 text-white shadow-sm"
-                               : "text-blue-700 hover:bg-blue-100"
-                           }`}
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition touch-manipulation whitespace-nowrap ${tab === t.key ? "bg-blue-600 text-white shadow-sm" : "text-blue-700 hover:bg-blue-100"}`}
               >
                 {t.label}
               </button>
             ))}
           </div>
 
-          {/* ══════════════════════════════════════════════
-              TAB: VACUNAS APLICADAS POR PERÍODO
-          ══════════════════════════════════════════════ */}
+          {/* ══ TAB VACUNAS ══════════════════════════════════ */}
           {tab === "vacunas" && (
             <div>
-              {/* Filtros + exportar */}
+              {/* Filtros */}
               <div className="flex flex-wrap gap-2 sm:gap-3 mb-5 items-center">
                 <select
                   value={mesVac}
                   onChange={(e) => setMesVac(e.target.value)}
-                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm
-                             focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
                 >
-                  {MESES.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
+                  {mesesDisponibles.length === 0 ? (
+                    <option value="">Cargando...</option>
+                  ) : (
+                    mesesDisponibles.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))
+                  )}
                 </select>
                 <select
                   value={filtroVac}
                   onChange={(e) => setFiltroVac(e.target.value)}
-                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm
-                             focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
                 >
                   <option value="">Todas las vacunas</option>
-                  {TIPOS_VACUNA.map((t) => (
+                  {tiposVacuna.map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
@@ -779,180 +642,186 @@ export default function Reportes() {
                 <div className="flex gap-2 ml-auto">
                   <button
                     onClick={exportarPDF}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-100
-                               hover:bg-blue-200 text-blue-700 font-semibold rounded-xl
-                               text-xs transition touch-manipulation"
+                    disabled={cargandoVac || datosVac.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold rounded-xl text-xs transition touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <IcoDescargar /> PDF
                   </button>
                   <button
                     onClick={exportarExcel}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-green-100
-                               hover:bg-green-200 text-green-700 font-semibold rounded-xl
-                               text-xs transition touch-manipulation"
+                    disabled={cargandoVac || datosVac.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 font-semibold rounded-xl text-xs transition touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <IcoDescargar /> Excel
                   </button>
                 </div>
               </div>
 
-              {/* Tarjetas resumen */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-5">
-                <StatCard
-                  label="Total dosis aplicadas"
-                  valor={totalDosisVac}
-                  color="blue"
-                  icono={<IcoVacuna />}
-                />
-                <StatCard
-                  label="Pacientes atendidos"
-                  valor={totalPacientesVac}
-                  color="blue"
-                  icono={<IcoPacientes />}
-                />
-                <StatCard
-                  label="Tipos de vacuna"
-                  valor={datosVac.length}
-                  color="blue"
-                  icono={<IcoReportes />}
-                />
-              </div>
+              {/* Error */}
+              {errorVac && (
+                <MensajeError mensaje={errorVac} onReintentar={fetchVacunas} />
+              )}
 
-              {/* Gráfica de barras */}
-              <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
-                <h3 className="text-sm font-semibold text-gray-700 mb-4">
-                  Dosis aplicadas por vacuna — {formatMes(mesVac)}
-                </h3>
-                {datosVac.length === 0 ? (
-                  <p className="text-gray-400 text-sm text-center py-6">
-                    Sin datos para el período seleccionado.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <div className="flex items-end gap-2 sm:gap-3 h-36 min-w-[320px] pb-1">
-                      {datosVac.map((r) => (
-                        <div
-                          key={r.vacuna}
-                          className="flex-1 flex flex-col items-center gap-1 min-w-[36px]"
-                        >
-                          <span className="text-xs font-semibold text-gray-700">
-                            {r.dosis}
-                          </span>
-                          <div
-                            className="w-full rounded-t-lg transition-all duration-700"
-                            style={{
-                              height: `${Math.max(8, (r.dosis / maxDosis) * 100)}px`,
-                              background: BAR_COLOR[r.vacuna] || "#dc2626",
-                            }}
-                          />
-                          <span className="text-xs text-gray-400 text-center leading-tight">
-                            {r.vacuna.length > 8
-                              ? r.vacuna.split(" ")[0]
-                              : r.vacuna}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+              {/* Skeleton / contenido */}
+              {cargandoVac ? (
+                <SkeletonReporte />
+              ) : (
+                <>
+                  {/* Tarjetas resumen */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-5">
+                    <StatCard
+                      label="Total dosis aplicadas"
+                      valor={totalDosisVac}
+                      color="blue"
+                      icono={<IcoVacuna />}
+                    />
+                    <StatCard
+                      label="Pacientes atendidos"
+                      valor={totalPacientesVac}
+                      color="blue"
+                      icono={<IcoPacientes />}
+                    />
+                    <StatCard
+                      label="Tipos de vacuna"
+                      valor={datosVac.length}
+                      color="blue"
+                      icono={<IcoReportes />}
+                    />
                   </div>
-                )}
-              </div>
 
-              {/* Tabla */}
-              <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-blue-50 border-b border-blue-100">
-                      <tr>
-                        {[
-                          "Vacuna",
-                          "Dosis aplicadas",
-                          "Pacientes",
-                          "% del total",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            className="text-left px-4 py-3 text-xs font-semibold
-                                                 text-blue-400 uppercase tracking-wider whitespace-nowrap"
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-blue-50">
-                      {datosVacPag.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={4}
-                            className="px-4 py-10 text-center text-gray-400 text-sm"
-                          >
-                            Sin registros.
-                          </td>
-                        </tr>
-                      ) : (
-                        datosVacPag.map((r) => (
-                          <tr
-                            key={r.vacuna}
-                            className="hover:bg-blue-50/40 transition"
-                          >
-                            <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">
-                              {r.vacuna}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <span className="font-bold text-blue-700 text-base">
-                                  {r.dosis}
-                                </span>
-                                <div className="flex-1 h-2 bg-blue-50 rounded-full min-w-[60px]">
-                                  <div
-                                    className="h-2 rounded-full transition-all duration-700"
-                                    style={{
-                                      width: `${(r.dosis / maxDosis) * 100}%`,
-                                      background:
-                                        BAR_COLOR[r.vacuna] || "#dc2626",
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-gray-600">
-                              {r.pacientes}
-                            </td>
-                            <td className="px-4 py-3 text-gray-600 font-medium">
-                              {totalDosisVac > 0
-                                ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
-                                : "—"}
-                            </td>
+                  {/* Gráfica */}
+                  <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-4">
+                      Dosis aplicadas por vacuna — {labelMesActual}
+                    </h3>
+                    {datosVac.length === 0 ? (
+                      <p className="text-gray-400 text-sm text-center py-6">
+                        Sin datos para el período seleccionado.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <div className="flex items-end gap-2 sm:gap-3 h-36 min-w-[320px] pb-1">
+                          {datosVac.map((r) => (
+                            <div
+                              key={r.vacuna}
+                              className="flex-1 flex flex-col items-center gap-1 min-w-[36px]"
+                            >
+                              <span className="text-xs font-semibold text-gray-700">
+                                {r.dosis}
+                              </span>
+                              <div
+                                className="w-full rounded-t-lg transition-all duration-700"
+                                style={{
+                                  height: `${Math.max(8, (r.dosis / maxDosis) * 100)}px`,
+                                  background: BAR_COLOR[r.vacuna] || "#dc2626",
+                                }}
+                              />
+                              <span className="text-xs text-gray-400 text-center leading-tight">
+                                {r.vacuna.length > 8
+                                  ? r.vacuna.split(" ")[0]
+                                  : r.vacuna}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tabla */}
+                  <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-blue-50 border-b border-blue-100">
+                          <tr>
+                            {[
+                              "Vacuna",
+                              "Dosis aplicadas",
+                              "Pacientes",
+                              "% del total",
+                            ].map((h) => (
+                              <th
+                                key={h}
+                                className="text-left px-4 py-3 text-xs font-semibold text-blue-400 uppercase tracking-wider whitespace-nowrap"
+                              >
+                                {h}
+                              </th>
+                            ))}
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <Paginacion
-                  inicio={(pagVacActual - 1) * POR_PAGINA}
-                  porPagina={POR_PAGINA}
-                  total={datosVac.length}
-                  totalPaginas={totalPagVac}
-                  paginaActual={pagVacActual}
-                  setPagina={setPaginaVac}
-                />
-              </div>
+                        </thead>
+                        <tbody className="divide-y divide-blue-50">
+                          {datosVacPag.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={4}
+                                className="px-4 py-10 text-center text-gray-400 text-sm"
+                              >
+                                Sin registros.
+                              </td>
+                            </tr>
+                          ) : (
+                            datosVacPag.map((r) => (
+                              <tr
+                                key={r.vacuna}
+                                className="hover:bg-blue-50/40 transition"
+                              >
+                                <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">
+                                  {r.vacuna}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-3">
+                                    <span className="font-bold text-blue-700 text-base">
+                                      {r.dosis}
+                                    </span>
+                                    <div className="flex-1 h-2 bg-blue-50 rounded-full min-w-[60px]">
+                                      <div
+                                        className="h-2 rounded-full transition-all duration-700"
+                                        style={{
+                                          width: `${(r.dosis / maxDosis) * 100}%`,
+                                          background:
+                                            BAR_COLOR[r.vacuna] || "#dc2626",
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-gray-600">
+                                  {r.pacientes}
+                                </td>
+                                <td className="px-4 py-3 text-gray-600 font-medium">
+                                  {totalDosisVac > 0
+                                    ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
+                                    : "—"}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Paginacion
+                      inicio={(pagVacActual - 1) * POR_PAGINA}
+                      porPagina={POR_PAGINA}
+                      total={datosVac.length}
+                      totalPaginas={totalPagVac}
+                      paginaActual={pagVacActual}
+                      setPagina={setPaginaVac}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           )}
 
-          {/* ══════════════════════════════════════════════
-              TAB: MOVIMIENTOS DE INVENTARIO
-          ══════════════════════════════════════════════ */}
+          {/* ══ TAB INVENTARIO ═══════════════════════════════ */}
           {tab === "inventario" && (
             <div>
-              {/* Filtros + exportar */}
+              {/* Filtros */}
               <div className="flex flex-wrap gap-2 sm:gap-3 mb-5 items-center">
                 <select
                   value={periodoInv}
                   onChange={(e) => setPeriodoInv(e.target.value)}
-                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm
-                             focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
                 >
                   <option value="mes">Último mes</option>
                   <option value="3meses">Últimos 3 meses</option>
@@ -961,11 +830,10 @@ export default function Reportes() {
                 <select
                   value={filtroInvVac}
                   onChange={(e) => setFiltroInvVac(e.target.value)}
-                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm
-                             focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
                 >
                   <option value="">Todas las vacunas</option>
-                  {TIPOS_VACUNA.map((t) => (
+                  {tiposVacuna.map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
@@ -974,8 +842,7 @@ export default function Reportes() {
                 <select
                   value={filtroTipo}
                   onChange={(e) => setFiltroTipo(e.target.value)}
-                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm
-                             focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+                  className="px-3 py-2 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
                 >
                   <option value="">Entradas y salidas</option>
                   <option value="entrada">Solo entradas</option>
@@ -983,186 +850,237 @@ export default function Reportes() {
                 </select>
                 <div className="flex gap-2 ml-auto">
                   <button
-                    onClick={() => exportar("PDF")}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-100
-                               hover:bg-blue-200 text-blue-700 font-semibold rounded-xl
-                               text-xs transition touch-manipulation"
+                    onClick={exportarPDF}
+                    disabled={cargandoInv || datosInv.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold rounded-xl text-xs transition touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <IcoDescargar /> PDF
                   </button>
                   <button
-                    onClick={() => exportar("Excel")}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-green-100
-                               hover:bg-green-200 text-green-700 font-semibold rounded-xl
-                               text-xs transition touch-manipulation"
+                    onClick={exportarExcel}
+                    disabled={cargandoInv || datosInv.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 font-semibold rounded-xl text-xs transition touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <IcoDescargar /> Excel
                   </button>
                 </div>
               </div>
 
-              {/* Tarjetas resumen */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-5">
-                <StatCard
-                  label="Dosis ingresadas"
-                  valor={`+${entradas}`}
-                  color="green"
-                  icono={<IcoCheck />}
+              {errorInv && (
+                <MensajeError
+                  mensaje={errorInv}
+                  onReintentar={fetchInventario}
                 />
-                <StatCard
-                  label="Dosis consumidas"
-                  valor={`-${salidas}`}
-                  color="blue"
-                  icono={<IcoAlerta />}
-                />
-                <StatCard
-                  label="Balance neto"
-                  valor={`${entradas - salidas >= 0 ? "+" : ""}${entradas - salidas}`}
-                  color={entradas - salidas >= 0 ? "green" : "blue"}
-                  icono={<IcoReportes />}
-                />
-              </div>
+              )}
 
-              {/* Gráfica de barras movimientos */}
-              <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
-                <h3 className="text-sm font-semibold text-gray-700 mb-1">
-                  Movimientos por vacuna
-                </h3>
-                <div className="flex gap-3 mb-4">
-                  <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <span className="w-3 h-3 rounded-sm bg-green-500 inline-block" />{" "}
-                    Entradas
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" />{" "}
-                    Salidas
-                  </span>
-                </div>
-                {datosInv.length === 0 ? (
-                  <p className="text-gray-400 text-sm text-center py-6">
-                    Sin movimientos para el período seleccionado.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <div className="flex items-end gap-2 sm:gap-3 h-36 min-w-[320px] pb-1">
-                      {datosInv.slice(0, 10).map((r, i) => (
-                        <div
-                          key={i}
-                          className="flex-1 flex flex-col items-center gap-1 min-w-[36px]"
-                        >
-                          <span className="text-xs font-semibold text-gray-700">
-                            {r.cantidad}
-                          </span>
-                          <div
-                            className="w-full rounded-t-lg transition-all duration-700"
-                            style={{
-                              height: `${Math.max(8, (r.cantidad / maxMov) * 100)}px`,
-                              background:
-                                r.tipo === "entrada" ? "#16a34a" : "#dc2626",
-                            }}
-                          />
-                          <span className="text-xs text-gray-400 text-center leading-tight">
-                            {r.vacuna.split(" ")[0]}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+              {cargandoInv ? (
+                <SkeletonReporte />
+              ) : (
+                <>
+                  {/* Tarjetas */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-5">
+                    <StatCard
+                      label="Dosis ingresadas"
+                      valor={`+${resumenInv.entradas}`}
+                      color="green"
+                      icono={<IcoCheck />}
+                    />
+                    <StatCard
+                      label="Dosis consumidas"
+                      valor={`-${resumenInv.salidas}`}
+                      color="blue"
+                      icono={<IcoAlerta />}
+                    />
+                    <StatCard
+                      label="Balance neto"
+                      valor={`${resumenInv.balance >= 0 ? "+" : ""}${resumenInv.balance}`}
+                      color={resumenInv.balance >= 0 ? "green" : "blue"}
+                      icono={<IcoReportes />}
+                    />
                   </div>
-                )}
-              </div>
 
-              {/* Tabla movimientos */}
-              <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-blue-50 border-b border-blue-100">
-                      <tr>
-                        {["Vacuna", "Tipo", "Cantidad", "Lote", "Fecha"].map(
-                          (h) => (
-                            <th
-                              key={h}
-                              className="text-left px-4 py-3 text-xs font-semibold
-                                                 text-blue-400 uppercase tracking-wider whitespace-nowrap"
+                  {/* Gráfica */}
+                  <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-1">
+                      Movimientos por vacuna
+                    </h3>
+                    <div className="flex gap-3 mb-4">
+                      <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <span className="w-3 h-3 rounded-sm bg-green-500 inline-block" />{" "}
+                        Entradas
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" />{" "}
+                        Salidas
+                      </span>
+                    </div>
+                    {datosInv.length === 0 ? (
+                      <p className="text-gray-400 text-sm text-center py-6">
+                        Sin movimientos para el período seleccionado.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <div className="flex items-end gap-2 sm:gap-3 h-36 min-w-[320px] pb-1">
+                          {datosInv.slice(0, 10).map((r, i) => (
+                            <div
+                              key={i}
+                              className="flex-1 flex flex-col items-center gap-1 min-w-[36px]"
                             >
-                              {h}
-                            </th>
-                          ),
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-blue-50">
-                      {datosInvPag.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className="px-4 py-10 text-center text-gray-400 text-sm"
-                          >
-                            Sin movimientos.
-                          </td>
-                        </tr>
-                      ) : (
-                        datosInvPag.map((r) => (
-                          <tr
-                            key={r.id}
-                            className="hover:bg-blue-50/40 transition"
-                          >
-                            <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">
-                              {r.vacuna}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={`px-2.5 py-1 rounded-full text-xs font-semibold
-                              ${
-                                r.tipo === "entrada"
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-blue-100 text-blue-700"
-                              }`}
-                              >
-                                {r.tipo === "entrada"
-                                  ? "↑ Entrada"
-                                  : "↓ Salida"}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 font-bold text-gray-800">
-                              <span
-                                className={
-                                  r.tipo === "entrada"
-                                    ? "text-green-600"
-                                    : "text-blue-600"
-                                }
-                              >
-                                {r.tipo === "entrada" ? "+" : "-"}
+                              <span className="text-xs font-semibold text-gray-700">
                                 {r.cantidad}
                               </span>
-                              <span className="text-gray-400 text-xs ml-1">
-                                dosis
+                              <div
+                                className="w-full rounded-t-lg transition-all duration-700"
+                                style={{
+                                  height: `${Math.max(8, (r.cantidad / maxMov) * 100)}px`,
+                                  background:
+                                    r.tipo === "entrada"
+                                      ? "#16a34a"
+                                      : "#dc2626",
+                                }}
+                              />
+                              <span className="text-xs text-gray-400 text-center leading-tight">
+                                {r.vacuna.split(" ")[0]}
                               </span>
-                            </td>
-                            <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                              {r.lote}
-                            </td>
-                            <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                              {formatFecha(r.fecha)}
-                            </td>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tabla */}
+                  <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-blue-50 border-b border-blue-100">
+                          <tr>
+                            {[
+                              "Vacuna",
+                              "Tipo",
+                              "Cantidad",
+                              "Lote",
+                              "Fecha",
+                            ].map((h) => (
+                              <th
+                                key={h}
+                                className="text-left px-4 py-3 text-xs font-semibold text-blue-400 uppercase tracking-wider whitespace-nowrap"
+                              >
+                                {h}
+                              </th>
+                            ))}
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <Paginacion
-                  inicio={(pagInvActual - 1) * POR_PAGINA}
-                  porPagina={POR_PAGINA}
-                  total={datosInv.length}
-                  totalPaginas={totalPagInv}
-                  paginaActual={pagInvActual}
-                  setPagina={setPaginaInv}
-                />
-              </div>
+                        </thead>
+                        <tbody className="divide-y divide-blue-50">
+                          {datosInvPag.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                className="px-4 py-10 text-center text-gray-400 text-sm"
+                              >
+                                Sin movimientos.
+                              </td>
+                            </tr>
+                          ) : (
+                            datosInvPag.map((r) => (
+                              <tr
+                                key={r.id}
+                                className="hover:bg-blue-50/40 transition"
+                              >
+                                <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">
+                                  {r.vacuna}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span
+                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold ${r.tipo === "entrada" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}
+                                  >
+                                    {r.tipo === "entrada"
+                                      ? "↑ Entrada"
+                                      : "↓ Salida"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 font-bold text-gray-800">
+                                  <span
+                                    className={
+                                      r.tipo === "entrada"
+                                        ? "text-green-600"
+                                        : "text-blue-600"
+                                    }
+                                  >
+                                    {r.tipo === "entrada" ? "+" : "-"}
+                                    {r.cantidad}
+                                  </span>
+                                  <span className="text-gray-400 text-xs ml-1">
+                                    dosis
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                  {r.lote}
+                                </td>
+                                <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                  {formatFecha(r.fecha)}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Paginacion
+                      inicio={(pagInvActual - 1) * POR_PAGINA}
+                      porPagina={POR_PAGINA}
+                      total={datosInv.length}
+                      totalPaginas={totalPagInv}
+                      paginaActual={pagInvActual}
+                      setPagina={setPaginaInv}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+// ── Skeleton de carga ───────────────────────────────────────
+function SkeletonReporte() {
+  return (
+    <div className="animate-pulse space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="bg-white border border-blue-100 rounded-2xl p-4 h-24"
+          >
+            <div className="w-9 h-9 bg-blue-100 rounded-xl mb-3" />
+            <div className="h-6 bg-blue-100 rounded w-1/2 mb-1" />
+            <div className="h-3 bg-blue-50 rounded w-3/4" />
+          </div>
+        ))}
+      </div>
+      <div className="bg-white border border-blue-100 rounded-2xl h-52" />
+      <div className="bg-white border border-blue-100 rounded-2xl h-64" />
+    </div>
+  );
+}
+
+// ── Mensaje de error con reintento ──────────────────────────
+function MensajeError({ mensaje, onReintentar }) {
+  return (
+    <div className="flex items-center justify-between gap-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 mb-5 text-sm">
+      <div className="flex items-center gap-2">
+        <IcoAlerta />
+        <span>{mensaje}</span>
+      </div>
+      <button
+        onClick={onReintentar}
+        className="text-xs font-semibold underline whitespace-nowrap hover:text-red-900 transition"
+      >
+        Reintentar
+      </button>
     </div>
   );
 }
@@ -1198,10 +1116,7 @@ function Paginacion({
   }, [totalPaginas, paginaActual]);
 
   return (
-    <div
-      className="px-4 py-3 border-t border-blue-50 bg-blue-50/30
-                    flex flex-col sm:flex-row items-center justify-between gap-3"
-    >
+    <div className="px-4 py-3 border-t border-blue-50 bg-blue-50/30 flex flex-col sm:flex-row items-center justify-between gap-3">
       <p className="text-xs text-gray-400 order-2 sm:order-1">
         Mostrando{" "}
         <span className="font-semibold text-gray-600">
@@ -1234,13 +1149,7 @@ function Paginacion({
             <button
               key={n}
               onClick={() => setPagina(n)}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs
-                         font-semibold transition border
-                         ${
-                           n === paginaActual
-                             ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                             : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"
-                         }`}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-semibold transition border ${n === paginaActual ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"}`}
             >
               {n}
             </button>
@@ -1274,9 +1183,7 @@ function BtnPag({ onClick, disabled, children }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className="w-8 h-8 flex items-center justify-center rounded-lg border
-                 border-blue-200 bg-white text-blue-500 hover:bg-blue-50
-                 disabled:opacity-40 disabled:cursor-not-allowed transition"
+      className="w-8 h-8 flex items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-500 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
     >
       {children}
     </button>
@@ -1301,8 +1208,7 @@ function StatCard({ label, valor, color, icono }) {
   return (
     <div className={`${e.wrap} border rounded-2xl p-3 sm:p-4`}>
       <div
-        className={`w-8 h-8 sm:w-9 sm:h-9 ${e.ic} rounded-xl flex items-center
-                      justify-center mb-2 sm:mb-3`}
+        className={`w-8 h-8 sm:w-9 sm:h-9 ${e.ic} rounded-xl flex items-center justify-center mb-2 sm:mb-3`}
       >
         {icono}
       </div>
