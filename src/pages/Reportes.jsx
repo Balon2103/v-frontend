@@ -5,7 +5,6 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 
 // ── Config API ──────────────────────────────────────────────
-// Sin "/api" al final: las rutas ya lo incluyen
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 function authHeaders() {
@@ -40,7 +39,19 @@ const BAR_COLOR = {
   Toxoide: "#172554",
 };
 
-// Soporta fechas ISO con timestamp ("2025-06-01T00:00:00.000Z") y fechas simples ("2025-06-01")
+const COLORES_GRAFICOS = [
+  "#1d4ed8",
+  "#2563eb",
+  "#3b82f6",
+  "#1e40af",
+  "#60a5fa",
+  "#1e3a8a",
+  "#93c5fd",
+  "#172554",
+  "#0ea5e9",
+  "#0284c7",
+];
+
 function formatFecha(f) {
   if (!f) return "—";
   const parte = String(f).split("T")[0];
@@ -48,9 +59,951 @@ function formatFecha(f) {
   return `${d}/${m}/${y}`;
 }
 
+function formatFechaCortaISO(iso) {
+  if (!iso) return "";
+  const parte = String(iso).split("T")[0];
+  const [, m, d] = parte.split("-");
+  return `${d}/${m}`;
+}
+
+// Obtener el lunes de la semana de una fecha
+function lunesDeLaSemana(fecha = new Date()) {
+  const d = new Date(fecha);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function isoDate(d) {
+  return d.toISOString().split("T")[0];
+}
+
+const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
 const POR_PAGINA = 10;
 
-// ── Componente principal ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// ── PDF MODERNO ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+function generarPDFVacunas({
+  datosVac,
+  porDia,
+  resumenSemana,
+  resumenMes,
+  labelMes,
+  mesVac,
+  totalDosisVac,
+  totalPacientesVac,
+}) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210,
+    H = 297;
+
+  // ── Paleta ──────────────────────────────────────────────
+  const AZUL_OSCURO = [10, 36, 99];
+  const AZUL_MED = [29, 78, 216];
+  const AZUL_CLARO = [96, 165, 250];
+  const BLANCO = [255, 255, 255];
+  const GRIS_CLARO = [245, 247, 252];
+  const GRIS_LINEA = [220, 226, 240];
+  const TEXTO_OSCURO = [15, 23, 42];
+  const TEXTO_GRIS = [100, 116, 139];
+  const VERDE = [22, 163, 74];
+  const ROJO = [220, 38, 38];
+
+  // ════════════════════════════════════════════════════════
+  // PÁGINA 1 — PORTADA + KPIs + GRÁFICA MENSUAL
+  // ════════════════════════════════════════════════════════
+
+  // — Fondo superior con forma diagonal —
+  // Banda principal
+  doc.setFillColor(...AZUL_OSCURO);
+  doc.rect(0, 0, W, 58, "F");
+
+  // Triángulo diagonal decorativo (simulado con rectángulos)
+  doc.setFillColor(...AZUL_MED);
+  // Polígono diagonal en esquina derecha del header
+  doc.triangle(W - 60, 0, W, 0, W, 58, "F");
+
+  // Acento diagonal pequeño
+  doc.setFillColor(...AZUL_CLARO);
+  doc.triangle(W - 30, 0, W, 0, W, 30, "F");
+
+  // — Logo / ícono geométrico —
+  doc.setFillColor(...AZUL_MED);
+  doc.roundedRect(12, 10, 18, 18, 3, 3, "F");
+  doc.setFillColor(...BLANCO);
+  // Cruz médica
+  doc.rect(18.5, 13, 5, 12, "F");
+  doc.rect(15, 16.5, 12, 5, "F");
+
+  // — Textos de portada —
+  doc.setTextColor(...BLANCO);
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("REPORTE DE VACUNACIÓN", 34, 22);
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...AZUL_CLARO);
+  doc.text("ASIC Dr. Tulio Pineda · Municipio Juan Germán Roscio", 34, 29);
+
+  doc.setTextColor(...BLANCO);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text(`Período: ${labelMes.toUpperCase()}`, 34, 38);
+
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 200, 240);
+  doc.text(
+    `Generado: ${new Date().toLocaleDateString("es-VE", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}`,
+    34,
+    45,
+  );
+
+  // — Línea separadora con acento —
+  doc.setDrawColor(...AZUL_CLARO);
+  doc.setLineWidth(0.8);
+  doc.line(12, 53, 100, 53);
+  doc.setDrawColor(...AZUL_MED);
+  doc.setLineWidth(0.3);
+  doc.line(100, 53, 198, 53);
+
+  // ── KPIs (3 tarjetas) ──────────────────────────────────
+  const kpis = [
+    {
+      label: "Dosis aplicadas",
+      valor: totalDosisVac,
+      sub: "en el mes",
+      color: AZUL_MED,
+    },
+    {
+      label: "Pacientes",
+      valor: totalPacientesVac,
+      sub: "atendidos",
+      color: [6, 148, 162],
+    },
+    {
+      label: "Tipos de vacuna",
+      valor: datosVac.length,
+      sub: "diferentes",
+      color: [124, 58, 237],
+    },
+  ];
+
+  const kpiY = 63;
+  const kpiW = 56,
+    kpiH = 24,
+    kpiX0 = 12,
+    gap = 4;
+
+  kpis.forEach((k, i) => {
+    const x = kpiX0 + i * (kpiW + gap);
+    // Sombra simulada
+    doc.setFillColor(200, 210, 235);
+    doc.roundedRect(x + 0.5, kpiY + 0.5, kpiW, kpiH, 3, 3, "F");
+    // Fondo blanco
+    doc.setFillColor(...BLANCO);
+    doc.roundedRect(x, kpiY, kpiW, kpiH, 3, 3, "F");
+    // Barra de color izquierda
+    doc.setFillColor(...k.color);
+    doc.roundedRect(x, kpiY, 3, kpiH, 1.5, 1.5, "F");
+    // Valor
+    doc.setTextColor(...TEXTO_OSCURO);
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.text(String(k.valor), x + 8, kpiY + 14);
+    // Label
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...k.color);
+    doc.text(k.label.toUpperCase(), x + 8, kpiY + 19);
+    // Sub
+    doc.setFontSize(6.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXTO_GRIS);
+    doc.text(k.sub, x + 8, kpiY + 23);
+  });
+
+  // ── Sección: Distribución por vacuna (tabla + minibars) ──
+  let curY = kpiY + kpiH + 10;
+
+  // Encabezado de sección
+  doc.setFillColor(...GRIS_CLARO);
+  doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+  doc.setFillColor(...AZUL_MED);
+  doc.roundedRect(12, curY, 3, 7, 1, 1, "F");
+  doc.setTextColor(...TEXTO_OSCURO);
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "bold");
+  doc.text("DISTRIBUCIÓN POR TIPO DE VACUNA", 18, curY + 4.8);
+  curY += 11;
+
+  // Tabla de vacunas con mini-barras
+  const maxD = Math.max(...datosVac.map((r) => r.dosis), 1);
+  const colores = COLORES_GRAFICOS;
+
+  // Cabecera tabla
+  doc.setFillColor(...AZUL_OSCURO);
+  doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+  doc.setTextColor(...BLANCO);
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.text("VACUNA", 16, curY + 4.8);
+  doc.text("DOSIS", 95, curY + 4.8);
+  doc.text("PACIENTES", 120, curY + 4.8);
+  doc.text("% DEL TOTAL", 150, curY + 4.8);
+  doc.text("TENDENCIA", 174, curY + 4.8);
+  curY += 7;
+
+  datosVac.forEach((r, idx) => {
+    const rowH = 8;
+    const bg = idx % 2 === 0 ? BLANCO : GRIS_CLARO;
+    doc.setFillColor(...bg);
+    doc.rect(12, curY, 186, rowH, "F");
+
+    // Dot de color
+    const col = colores[idx % colores.length];
+    doc.setFillColor(...hexToRgb(col));
+    doc.circle(15.5, curY + rowH / 2, 1.5, "F");
+
+    // Nombre vacuna
+    doc.setTextColor(...TEXTO_OSCURO);
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "normal");
+    const nombre =
+      r.vacuna.length > 22 ? r.vacuna.slice(0, 20) + "…" : r.vacuna;
+    doc.text(nombre, 18, curY + 5.2);
+
+    // Dosis (bold)
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...hexToRgb(col));
+    doc.text(String(r.dosis), 95, curY + 5.2);
+
+    // Pacientes
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXTO_OSCURO);
+    doc.text(String(r.pacientes), 120, curY + 5.2);
+
+    // Porcentaje
+    const pct =
+      totalDosisVac > 0 ? ((r.dosis / totalDosisVac) * 100).toFixed(1) : "0.0";
+    doc.text(`${pct}%`, 150, curY + 5.2);
+
+    // Mini barra de tendencia
+    const barMaxW = 20;
+    const barW = Math.max(1, (r.dosis / maxD) * barMaxW);
+    doc.setFillColor(230, 235, 250);
+    doc.roundedRect(170, curY + 2.5, barMaxW, 3, 1, 1, "F");
+    doc.setFillColor(...hexToRgb(col));
+    doc.roundedRect(170, curY + 2.5, barW, 3, 1, 1, "F");
+
+    curY += rowH;
+  });
+
+  // Fila de total
+  doc.setFillColor(...AZUL_OSCURO);
+  doc.rect(12, curY, 186, 7, "F");
+  doc.setTextColor(...BLANCO);
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "bold");
+  doc.text("TOTAL", 16, curY + 4.8);
+  doc.text(String(totalDosisVac), 95, curY + 4.8);
+  doc.text(String(totalPacientesVac), 120, curY + 4.8);
+  doc.text("100%", 150, curY + 4.8);
+  curY += 7;
+
+  // ── Gráfica de barras: evolución diaria del mes ──────────
+  curY += 8;
+
+  // Verificar si hay espacio en página 1
+  if (curY + 55 > H - 15) {
+    doc.addPage();
+    curY = 18;
+  }
+
+  doc.setFillColor(...GRIS_CLARO);
+  doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+  doc.setFillColor(...AZUL_MED);
+  doc.roundedRect(12, curY, 3, 7, 1, 1, "F");
+  doc.setTextColor(...TEXTO_OSCURO);
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "bold");
+  doc.text(
+    "EVOLUCIÓN DIARIA DE DOSIS — " + labelMes.toUpperCase(),
+    18,
+    curY + 4.8,
+  );
+  curY += 11;
+
+  if (porDia && porDia.length > 0) {
+    const graficoH = 40;
+    const graficoW = 186;
+    const graficoX = 12;
+    const graficoY = curY;
+    const maxDia = Math.max(...porDia.map((d) => d.dosis), 1);
+
+    // Fondo del gráfico
+    doc.setFillColor(...GRIS_CLARO);
+    doc.roundedRect(graficoX, graficoY, graficoW, graficoH, 3, 3, "F");
+
+    // Líneas horizontales de referencia
+    [0.25, 0.5, 0.75, 1].forEach((frac) => {
+      const ly = graficoY + graficoH - frac * graficoH;
+      doc.setDrawColor(...GRIS_LINEA);
+      doc.setLineWidth(0.2);
+      doc.line(graficoX + 2, ly, graficoX + graficoW - 2, ly);
+      doc.setTextColor(...TEXTO_GRIS);
+      doc.setFontSize(5.5);
+      doc.text(
+        String(Math.round(maxDia * frac)),
+        graficoX + graficoW + 1,
+        ly + 1,
+      );
+    });
+
+    // Barras
+    const barW = Math.max(1.5, (graficoW - 8) / porDia.length - 1);
+    const totalBarW = porDia.length * (barW + 1);
+    const startX = graficoX + (graficoW - totalBarW) / 2;
+
+    porDia.forEach((dia, i) => {
+      const bH = Math.max(1, (dia.dosis / maxDia) * (graficoH - 8));
+      const bX = startX + i * (barW + 1);
+      const bY = graficoY + graficoH - bH - 4;
+
+      // Gradiente simulado: barra más oscura abajo
+      doc.setFillColor(...AZUL_MED);
+      doc.roundedRect(bX, bY, barW, bH, 0.8, 0.8, "F");
+
+      // Etiqueta de día (cada 5)
+      if (i % 5 === 0 || i === porDia.length - 1) {
+        doc.setTextColor(...TEXTO_GRIS);
+        doc.setFontSize(5);
+        doc.text(formatFechaCortaISO(dia.fecha), bX, graficoY + graficoH + 4, {
+          align: "center",
+        });
+      }
+    });
+
+    curY += graficoH + 8;
+  } else {
+    doc.setTextColor(...TEXTO_GRIS);
+    doc.setFontSize(8);
+    doc.text(
+      "Sin datos diarios disponibles para este período.",
+      105,
+      curY + 10,
+      { align: "center" },
+    );
+    curY += 18;
+  }
+
+  // ════════════════════════════════════════════════════════
+  // PÁGINA 2 — RESUMEN SEMANAL
+  // ════════════════════════════════════════════════════════
+  doc.addPage();
+
+  // Header compacto en páginas interiores
+  doc.setFillColor(...AZUL_OSCURO);
+  doc.rect(0, 0, W, 18, "F");
+  doc.setFillColor(...AZUL_MED);
+  doc.triangle(W - 40, 0, W, 0, W, 18, "F");
+  doc.setTextColor(...BLANCO);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.text("REPORTE DE VACUNACIÓN · ASIC Dr. Tulio Pineda", 12, 11);
+  doc.setTextColor(...AZUL_CLARO);
+  doc.setFontSize(7);
+  doc.text(labelMes.toUpperCase(), 12, 16);
+  curY = 26;
+
+  // — Sección semana actual —
+  doc.setFillColor(...GRIS_CLARO);
+  doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+  doc.setFillColor(22, 163, 74);
+  doc.roundedRect(12, curY, 3, 7, 1, 1, "F");
+  doc.setTextColor(...TEXTO_OSCURO);
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "bold");
+  doc.text("RESUMEN DE LA SEMANA ACTUAL", 18, curY + 4.8);
+  curY += 11;
+
+  if (resumenSemana) {
+    // KPIs de semana (4 tarjetas más pequeñas)
+    const skpis = [
+      {
+        label: "Dosis semana",
+        valor: resumenSemana.totalDosis,
+        color: AZUL_MED,
+      },
+      {
+        label: "Pacientes",
+        valor: resumenSemana.totalPacientes,
+        color: [6, 148, 162],
+      },
+      {
+        label: "Días con vacunas",
+        valor: resumenSemana.diasConDatos,
+        color: [124, 58, 237],
+      },
+      {
+        label: "Prom. diario",
+        valor: resumenSemana.promedioDiario,
+        color: [245, 158, 11],
+      },
+    ];
+
+    const sw = 43,
+      sh = 20,
+      sx0 = 12,
+      sgap = 3;
+    skpis.forEach((k, i) => {
+      const x = sx0 + i * (sw + sgap);
+      doc.setFillColor(200, 210, 235);
+      doc.roundedRect(x + 0.5, curY + 0.5, sw, sh, 3, 3, "F");
+      doc.setFillColor(...BLANCO);
+      doc.roundedRect(x, curY, sw, sh, 3, 3, "F");
+      doc.setFillColor(...k.color);
+      doc.roundedRect(x, curY, 3, sh, 1.5, 1.5, "F");
+      doc.setTextColor(...TEXTO_OSCURO);
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(k.valor), x + 7, curY + 12);
+      doc.setFontSize(6.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...k.color);
+      doc.text(k.label.toUpperCase(), x + 7, curY + 17);
+    });
+    curY += sh + 10;
+
+    // Tabla día a día de la semana
+    doc.setFillColor(...AZUL_OSCURO);
+    doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+    doc.setTextColor(...BLANCO);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.text("DÍA", 16, curY + 4.8);
+    doc.text("FECHA", 50, curY + 4.8);
+    doc.text("DOSIS", 90, curY + 4.8);
+    doc.text("PACIENTES", 120, curY + 4.8);
+    doc.text("ESTADO", 158, curY + 4.8);
+    curY += 7;
+
+    (resumenSemana.porDia || []).forEach((dia, idx) => {
+      const rH = 8;
+      doc.setFillColor(...(idx % 2 === 0 ? BLANCO : GRIS_CLARO));
+      doc.rect(12, curY, 186, rH, "F");
+
+      doc.setTextColor(...TEXTO_OSCURO);
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "bold");
+      doc.text(dia.nombre, 16, curY + 5.2);
+
+      doc.setFont("helvetica", "normal");
+      doc.text(formatFecha(dia.fecha), 50, curY + 5.2);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...AZUL_MED);
+      doc.text(String(dia.dosis), 90, curY + 5.2);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...TEXTO_OSCURO);
+      doc.text(String(dia.pacientes), 120, curY + 5.2);
+
+      // Badge de estado
+      if (dia.dosis > 0) {
+        doc.setFillColor(220, 252, 231);
+        doc.roundedRect(154, curY + 1.5, 22, 5, 1.5, 1.5, "F");
+        doc.setTextColor(...VERDE);
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "bold");
+        doc.text("ACTIVO", 165, curY + 5.2, { align: "center" });
+      } else {
+        doc.setFillColor(240, 240, 245);
+        doc.roundedRect(154, curY + 1.5, 22, 5, 1.5, 1.5, "F");
+        doc.setTextColor(...TEXTO_GRIS);
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "bold");
+        doc.text("SIN DATOS", 165, curY + 5.2, { align: "center" });
+      }
+
+      curY += rH;
+    });
+
+    // Mini-gráfica horizontal de la semana
+    curY += 8;
+    doc.setFillColor(...GRIS_CLARO);
+    doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+    doc.setFillColor(22, 163, 74);
+    doc.roundedRect(12, curY, 3, 7, 1, 1, "F");
+    doc.setTextColor(...TEXTO_OSCURO);
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "bold");
+    doc.text("DISTRIBUCIÓN DIARIA DE LA SEMANA", 18, curY + 4.8);
+    curY += 11;
+
+    const gwH = 35,
+      gwX = 12,
+      gwW = 186;
+    doc.setFillColor(...GRIS_CLARO);
+    doc.roundedRect(gwX, curY, gwW, gwH, 3, 3, "F");
+    const maxDS = Math.max(
+      ...(resumenSemana.porDia || []).map((d) => d.dosis),
+      1,
+    );
+    const bwS = 20;
+    const gapS = (gwW - 16 - 7 * bwS) / 6;
+    const startXS = gwX + 8;
+
+    (resumenSemana.porDia || []).forEach((dia, i) => {
+      const bH = Math.max(1, (dia.dosis / maxDS) * (gwH - 14));
+      const bX = startXS + i * (bwS + gapS);
+      const bY = curY + gwH - bH - 8;
+
+      doc.setFillColor(...(dia.dosis > 0 ? [22, 163, 74] : [200, 210, 230]));
+      doc.roundedRect(bX, bY, bwS, bH, 1.5, 1.5, "F");
+
+      if (dia.dosis > 0) {
+        doc.setTextColor(...TEXTO_OSCURO);
+        doc.setFontSize(6);
+        doc.setFont("helvetica", "bold");
+        doc.text(String(dia.dosis), bX + bwS / 2, bY - 1.5, {
+          align: "center",
+        });
+      }
+
+      doc.setTextColor(...TEXTO_GRIS);
+      doc.setFontSize(6.5);
+      doc.setFont("helvetica", "bold");
+      doc.text(dia.nombre, bX + bwS / 2, curY + gwH - 1.5, { align: "center" });
+    });
+    curY += gwH + 10;
+  }
+
+  // — Comparación semanas del mes —
+  if (resumenMes?.semanas && resumenMes.semanas.length > 0) {
+    if (curY + 50 > H - 15) {
+      doc.addPage();
+      // header compacto
+      doc.setFillColor(...AZUL_OSCURO);
+      doc.rect(0, 0, W, 18, "F");
+      doc.setFillColor(...AZUL_MED);
+      doc.triangle(W - 40, 0, W, 0, W, 18, "F");
+      doc.setTextColor(...BLANCO);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("REPORTE DE VACUNACIÓN · ASIC Dr. Tulio Pineda", 12, 11);
+      curY = 26;
+    }
+
+    doc.setFillColor(...GRIS_CLARO);
+    doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+    doc.setFillColor(245, 158, 11);
+    doc.roundedRect(12, curY, 3, 7, 1, 1, "F");
+    doc.setTextColor(...TEXTO_OSCURO);
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "bold");
+    doc.text("COMPARATIVA SEMANAL DEL MES", 18, curY + 4.8);
+    curY += 11;
+
+    // Cabecera
+    doc.setFillColor(...AZUL_OSCURO);
+    doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+    doc.setTextColor(...BLANCO);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.text("SEMANA", 16, curY + 4.8);
+    doc.text("PERÍODO", 50, curY + 4.8);
+    doc.text("DOSIS", 110, curY + 4.8);
+    doc.text("PACIENTES", 140, curY + 4.8);
+    doc.text("VARIACIÓN", 170, curY + 4.8);
+    curY += 7;
+
+    resumenMes.semanas.forEach((sem, idx) => {
+      const rH = 9;
+      doc.setFillColor(...(idx % 2 === 0 ? BLANCO : GRIS_CLARO));
+      doc.rect(12, curY, 186, rH, "F");
+
+      doc.setTextColor(...TEXTO_OSCURO);
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Semana ${idx + 1}`, 16, curY + 5.8);
+
+      doc.setFont("helvetica", "normal");
+      doc.text(
+        `${formatFecha(sem.desde)} – ${formatFecha(sem.hasta)}`,
+        50,
+        curY + 5.8,
+      );
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...AZUL_MED);
+      doc.text(String(sem.dosis), 110, curY + 5.8);
+
+      doc.setTextColor(...TEXTO_OSCURO);
+      doc.setFont("helvetica", "normal");
+      doc.text(String(sem.pacientes), 140, curY + 5.8);
+
+      // Variación vs semana anterior
+      if (idx > 0) {
+        const prev = resumenMes.semanas[idx - 1].dosis;
+        const diff = sem.dosis - prev;
+        const pctVar = prev > 0 ? ((diff / prev) * 100).toFixed(0) : "—";
+        const esPos = diff >= 0;
+        doc.setFillColor(...(esPos ? [220, 252, 231] : [254, 226, 226]));
+        doc.roundedRect(166, curY + 1.5, 28, 5.5, 1.5, 1.5, "F");
+        doc.setTextColor(...(esPos ? VERDE : ROJO));
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "bold");
+        doc.text(
+          `${esPos ? "▲" : "▼"} ${Math.abs(diff)} (${pctVar}%)`,
+          180,
+          curY + 5.8,
+          { align: "center" },
+        );
+      } else {
+        doc.setTextColor(...TEXTO_GRIS);
+        doc.setFontSize(7);
+        doc.text("—", 180, curY + 5.8, { align: "center" });
+      }
+
+      curY += rH;
+    });
+    curY += 6;
+  }
+
+  // ── Pie de página en todas las páginas ──────────────────
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(...AZUL_MED);
+    doc.setLineWidth(0.5);
+    doc.line(12, H - 12, W - 12, H - 12);
+    doc.setFillColor(...AZUL_MED);
+    doc.circle(12, H - 12, 0.8, "F");
+    doc.circle(W - 12, H - 12, 0.8, "F");
+    doc.setFontSize(6.5);
+    doc.setTextColor(...TEXTO_GRIS);
+    doc.text("Sistema de Vacunación — ASIC Dr. Tulio Pineda", 12, H - 7);
+    doc.setTextColor(...AZUL_MED);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${p} / ${totalPages}`, W - 12, H - 7, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXTO_GRIS);
+    doc.text(new Date().toLocaleDateString("es-VE"), W / 2, H - 7, {
+      align: "center",
+    });
+  }
+
+  doc.save(`reporte_vacunas_${mesVac}.pdf`);
+}
+
+function generarPDFInventario({ datosInv, resumenInv, periodoInv, porVacuna }) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210,
+    H = 297;
+
+  const AZUL_OSCURO = [10, 36, 99];
+  const AZUL_MED = [29, 78, 216];
+  const AZUL_CLARO = [96, 165, 250];
+  const BLANCO = [255, 255, 255];
+  const GRIS_CLARO = [245, 247, 252];
+  const TEXTO_OSCURO = [15, 23, 42];
+  const TEXTO_GRIS = [100, 116, 139];
+  const VERDE = [22, 163, 74];
+  const ROJO = [220, 38, 38];
+
+  const periodoLabel =
+    periodoInv === "mes"
+      ? "ÚLTIMO MES"
+      : periodoInv === "3meses"
+        ? "ÚLTIMOS 3 MESES"
+        : "TODOS LOS PERÍODOS";
+
+  // — Header diagonal —
+  doc.setFillColor(...AZUL_OSCURO);
+  doc.rect(0, 0, W, 58, "F");
+  doc.setFillColor(...AZUL_MED);
+  doc.triangle(W - 60, 0, W, 0, W, 58, "F");
+  doc.setFillColor(...AZUL_CLARO);
+  doc.triangle(W - 30, 0, W, 0, W, 30, "F");
+
+  // Ícono inventario
+  doc.setFillColor(...AZUL_MED);
+  doc.roundedRect(12, 10, 18, 18, 3, 3, "F");
+  doc.setFillColor(...BLANCO);
+  doc.rect(15, 13, 12, 2.5, "F");
+  doc.rect(15, 17, 12, 2.5, "F");
+  doc.rect(15, 21, 12, 2.5, "F");
+
+  doc.setTextColor(...BLANCO);
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("REPORTE DE INVENTARIO", 34, 22);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...AZUL_CLARO);
+  doc.text("ASIC Dr. Tulio Pineda · Municipio Juan Germán Roscio", 34, 29);
+  doc.setTextColor(...BLANCO);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text(`Período: ${periodoLabel}`, 34, 38);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 200, 240);
+  doc.text(
+    `Generado: ${new Date().toLocaleDateString("es-VE", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}`,
+    34,
+    45,
+  );
+  doc.setDrawColor(...AZUL_CLARO);
+  doc.setLineWidth(0.8);
+  doc.line(12, 53, 100, 53);
+  doc.setDrawColor(...AZUL_MED);
+  doc.setLineWidth(0.3);
+  doc.line(100, 53, 198, 53);
+
+  // KPIs inventario
+  const { entradas, salidas, balance } = resumenInv;
+  const kpis = [
+    { label: "Dosis ingresadas", valor: `+${entradas}`, color: [22, 163, 74] },
+    { label: "Dosis consumidas", valor: `-${salidas}`, color: [220, 38, 38] },
+    {
+      label: "Balance neto",
+      valor: `${balance >= 0 ? "+" : ""}${balance}`,
+      color: balance >= 0 ? [22, 163, 74] : [220, 38, 38],
+    },
+  ];
+
+  let curY = 63;
+  const kpiW = 56,
+    kpiH = 24,
+    kpiX0 = 12,
+    gap = 4;
+  kpis.forEach((k, i) => {
+    const x = kpiX0 + i * (kpiW + gap);
+    doc.setFillColor(200, 210, 235);
+    doc.roundedRect(x + 0.5, curY + 0.5, kpiW, kpiH, 3, 3, "F");
+    doc.setFillColor(...BLANCO);
+    doc.roundedRect(x, curY, kpiW, kpiH, 3, 3, "F");
+    doc.setFillColor(...k.color);
+    doc.roundedRect(x, curY, 3, kpiH, 1.5, 1.5, "F");
+    doc.setTextColor(...TEXTO_OSCURO);
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.text(String(k.valor), x + 8, curY + 14);
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...k.color);
+    doc.text(k.label.toUpperCase(), x + 8, curY + 19);
+  });
+  curY += kpiH + 10;
+
+  // Resumen por vacuna (entradas vs salidas)
+  if (porVacuna && porVacuna.length > 0) {
+    doc.setFillColor(...GRIS_CLARO);
+    doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+    doc.setFillColor(...AZUL_MED);
+    doc.roundedRect(12, curY, 3, 7, 1, 1, "F");
+    doc.setTextColor(...TEXTO_OSCURO);
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "bold");
+    doc.text("BALANCE POR TIPO DE VACUNA", 18, curY + 4.8);
+    curY += 11;
+
+    doc.setFillColor(...AZUL_OSCURO);
+    doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+    doc.setTextColor(...BLANCO);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.text("VACUNA", 16, curY + 4.8);
+    doc.text("ENTRADAS", 100, curY + 4.8);
+    doc.text("SALIDAS", 135, curY + 4.8);
+    doc.text("BALANCE", 168, curY + 4.8);
+    curY += 7;
+
+    // Agrupar por vacuna
+    const vacunaMap = {};
+    porVacuna.forEach((r) => {
+      if (!vacunaMap[r.vacuna])
+        vacunaMap[r.vacuna] = { entradas: 0, salidas: 0 };
+      if (r.tipo === "entrada") vacunaMap[r.vacuna].entradas += r.cantidad;
+      else vacunaMap[r.vacuna].salidas += r.cantidad;
+    });
+
+    Object.entries(vacunaMap).forEach(([nombre, v], idx) => {
+      const bal = v.entradas - v.salidas;
+      const rH = 8;
+      doc.setFillColor(...(idx % 2 === 0 ? BLANCO : GRIS_CLARO));
+      doc.rect(12, curY, 186, rH, "F");
+
+      doc.setTextColor(...TEXTO_OSCURO);
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "normal");
+      const n = nombre.length > 26 ? nombre.slice(0, 24) + "…" : nombre;
+      doc.text(n, 16, curY + 5.2);
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...VERDE);
+      doc.text(`+${v.entradas}`, 100, curY + 5.2);
+
+      doc.setTextColor(...ROJO);
+      doc.text(`-${v.salidas}`, 135, curY + 5.2);
+
+      doc.setTextColor(
+        bal >= 0 ? VERDE[0] : ROJO[0],
+        bal >= 0 ? VERDE[1] : ROJO[1],
+        bal >= 0 ? VERDE[2] : ROJO[2],
+      );
+      doc.text(`${bal >= 0 ? "+" : ""}${bal}`, 168, curY + 5.2);
+
+      curY += rH;
+    });
+    curY += 6;
+  }
+
+  // Detalle de movimientos
+  if (curY + 20 > H - 15) {
+    doc.addPage();
+    doc.setFillColor(...AZUL_OSCURO);
+    doc.rect(0, 0, W, 18, "F");
+    doc.setFillColor(...AZUL_MED);
+    doc.triangle(W - 40, 0, W, 0, W, 18, "F");
+    doc.setTextColor(...BLANCO);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("REPORTE DE INVENTARIO · ASIC Dr. Tulio Pineda", 12, 11);
+    curY = 26;
+  }
+
+  doc.setFillColor(...GRIS_CLARO);
+  doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+  doc.setFillColor(...AZUL_MED);
+  doc.roundedRect(12, curY, 3, 7, 1, 1, "F");
+  doc.setTextColor(...TEXTO_OSCURO);
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "bold");
+  doc.text("DETALLE DE MOVIMIENTOS", 18, curY + 4.8);
+  curY += 11;
+
+  doc.setFillColor(...AZUL_OSCURO);
+  doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+  doc.setTextColor(...BLANCO);
+  doc.setFontSize(6.5);
+  doc.setFont("helvetica", "bold");
+  doc.text("VACUNA", 16, curY + 4.8);
+  doc.text("TIPO", 78, curY + 4.8);
+  doc.text("CANTIDAD", 102, curY + 4.8);
+  doc.text("LOTE", 130, curY + 4.8);
+  doc.text("VENCIMIENTO", 158, curY + 4.8);
+  doc.text("FECHA MOV.", 185, curY + 4.8, { align: "right" });
+  curY += 7;
+
+  datosInv.forEach((r, idx) => {
+    if (curY + 9 > H - 15) {
+      doc.addPage();
+      doc.setFillColor(...AZUL_OSCURO);
+      doc.rect(0, 0, W, 18, "F");
+      doc.setFillColor(...AZUL_MED);
+      doc.triangle(W - 40, 0, W, 0, W, 18, "F");
+      doc.setTextColor(...BLANCO);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("REPORTE DE INVENTARIO · ASIC Dr. Tulio Pineda", 12, 11);
+      curY = 26;
+      doc.setFillColor(...AZUL_OSCURO);
+      doc.roundedRect(12, curY, 186, 7, 2, 2, "F");
+      doc.setTextColor(...BLANCO);
+      doc.setFontSize(6.5);
+      doc.setFont("helvetica", "bold");
+      doc.text("VACUNA", 16, curY + 4.8);
+      doc.text("TIPO", 78, curY + 4.8);
+      doc.text("CANTIDAD", 102, curY + 4.8);
+      doc.text("LOTE", 130, curY + 4.8);
+      doc.text("VENCIMIENTO", 158, curY + 4.8);
+      doc.text("FECHA MOV.", 185, curY + 4.8, { align: "right" });
+      curY += 7;
+    }
+
+    const rH = 8;
+    doc.setFillColor(...(idx % 2 === 0 ? BLANCO : GRIS_CLARO));
+    doc.rect(12, curY, 186, rH, "F");
+
+    doc.setTextColor(...TEXTO_OSCURO);
+    doc.setFontSize(6.5);
+    doc.setFont("helvetica", "normal");
+    const n = r.vacuna.length > 20 ? r.vacuna.slice(0, 18) + "…" : r.vacuna;
+    doc.text(n, 16, curY + 5.2);
+
+    // Badge tipo
+    const esEntrada = r.tipo === "entrada";
+    doc.setFillColor(...(esEntrada ? [220, 252, 231] : [254, 226, 226]));
+    doc.roundedRect(74, curY + 1.5, 20, 5, 1.5, 1.5, "F");
+    doc.setTextColor(...(esEntrada ? VERDE : ROJO));
+    doc.setFontSize(6);
+    doc.setFont("helvetica", "bold");
+    doc.text(esEntrada ? "↑ ENTRADA" : "↓ SALIDA", 84, curY + 5.2, {
+      align: "center",
+    });
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(
+      esEntrada ? VERDE[0] : ROJO[0],
+      esEntrada ? VERDE[1] : ROJO[1],
+      esEntrada ? VERDE[2] : ROJO[2],
+    );
+    doc.setFontSize(7);
+    doc.text(`${esEntrada ? "+" : "-"}${r.cantidad}`, 102, curY + 5.2);
+
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXTO_GRIS);
+    doc.setFontSize(6.5);
+    doc.text(r.lote || "—", 130, curY + 5.2);
+    doc.text(r.vencimiento ? formatFecha(r.vencimiento) : "—", 158, curY + 5.2);
+    doc.text(formatFecha(r.fecha), 185, curY + 5.2, { align: "right" });
+
+    curY += rH;
+  });
+
+  // Pie de página
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(...AZUL_MED);
+    doc.setLineWidth(0.5);
+    doc.line(12, H - 12, W - 12, H - 12);
+    doc.setFillColor(...AZUL_MED);
+    doc.circle(12, H - 12, 0.8, "F");
+    doc.circle(W - 12, H - 12, 0.8, "F");
+    doc.setFontSize(6.5);
+    doc.setTextColor(...TEXTO_GRIS);
+    doc.text("Sistema de Vacunación — ASIC Dr. Tulio Pineda", 12, H - 7);
+    doc.setTextColor(...AZUL_MED);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${p} / ${totalPages}`, W - 12, H - 7, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXTO_GRIS);
+    doc.text(new Date().toLocaleDateString("es-VE"), W / 2, H - 7, {
+      align: "center",
+    });
+  }
+
+  doc.save(`reporte_inventario_${new Date().toISOString().split("T")[0]}.pdf`);
+}
+
+// Helper: hex "#1d4ed8" → [29, 78, 216]
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return [r, g, b];
+}
+
+// ═══════════════════════════════════════════════════════════
+// ── COMPONENTE PRINCIPAL ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
 export default function Reportes() {
   const navigate = useNavigate();
 
@@ -58,22 +1011,26 @@ export default function Reportes() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tab, setTab] = useState("vacunas");
 
-  // ── Datos del servidor ──────────────────────────────────
+  // Selectores
   const [mesesDisponibles, setMesesDisponibles] = useState([]);
   const [tiposVacuna, setTiposVacuna] = useState([]);
 
-  // Vacunas
-  const [mesVac, setMesVac] = useState(""); // formato "YYYY-MM"
+  // — Tab Vacunas —
+  const [mesVac, setMesVac] = useState("");
   const [filtroVac, setFiltroVac] = useState("");
-  const [datosVac, setDatosVac] = useState([]);
+  const [datosVac, setDatosVac] = useState([]); // por_vacuna
+  const [porDiaMes, setPorDiaMes] = useState([]); // por_dia
+  const [resumenSemana, setResumenSemana] = useState(null);
+  const [resumenMes, setResumenMes] = useState(null);
   const [cargandoVac, setCargandoVac] = useState(false);
   const [errorVac, setErrorVac] = useState("");
 
-  // Inventario
+  // — Tab Inventario —
   const [periodoInv, setPeriodoInv] = useState("mes");
   const [filtroInvVac, setFiltroInvVac] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
   const [datosInv, setDatosInv] = useState([]);
+  const [porVacunaInv, setPorVacunaInv] = useState([]);
   const [resumenInv, setResumenInv] = useState({
     entradas: 0,
     salidas: 0,
@@ -86,7 +1043,7 @@ export default function Reportes() {
   const [paginaVac, setPaginaVac] = useState(1);
   const [paginaInv, setPaginaInv] = useState(1);
 
-  // ── Auth + carga inicial ────────────────────────────────
+  // ── Auth ────────────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem("token");
     const u = localStorage.getItem("usuario");
@@ -105,49 +1062,111 @@ export default function Reportes() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
-  // ── Carga de selectores al montar ───────────────────────
-  // El backend NO tiene /vacunas/tipos ni /vacunas/meses:
-  //   - meses → GET /api/reportes/meses
-  //   - tipos → se extrae del primer fetch de /api/reportes/vacunas (campo por_vacuna)
+  // ── Carga de meses disponibles ──────────────────────────
   useEffect(() => {
     apiFetch(`${API}/api/reportes/meses`)
       .then((d) => {
         if (!d) return;
         setMesesDisponibles(d.meses);
-        if (d.meses.length > 0) setMesVac(d.meses[0].value); // "YYYY-MM"
+        if (d.meses.length > 0) setMesVac(d.meses[0].value);
       })
       .catch(() => setErrorVac("No se pudieron cargar los meses disponibles."));
   }, []);
 
   // ── Fetch vacunas ───────────────────────────────────────
-  // El backend espera:  GET /api/reportes/vacunas?anio=YYYY&mes=M[&vacuna=nombre]
-  // El backend responde: { ok, por_vacuna: [{vacuna, dosis, pacientes}], resumen, por_dia }
   const fetchVacunas = useCallback(async () => {
     if (!mesVac) return;
     setCargandoVac(true);
     setErrorVac("");
     try {
-      // mesVac es "YYYY-MM" → separar en anio y mes
       const [anio, mes] = mesVac.split("-");
       const params = new URLSearchParams({ anio, mes });
       if (filtroVac) params.set("vacuna", filtroVac);
 
       const data = await apiFetch(`${API}/api/reportes/vacunas?${params}`);
-      if (data) {
-        setDatosVac(data.por_vacuna); // campo real del backend
-        // Poblar el selector de tipos con la primera respuesta exitosa
-        if (tiposVacuna.length === 0 && data.por_vacuna.length > 0) {
-          setTiposVacuna(data.por_vacuna.map((v) => v.vacuna));
-        }
-        setPaginaVac(1);
+      if (!data) return;
+
+      setDatosVac(data.por_vacuna || []);
+      setPorDiaMes(data.por_dia || []);
+
+      if (tiposVacuna.length === 0 && (data.por_vacuna || []).length > 0) {
+        setTiposVacuna(data.por_vacuna.map((v) => v.vacuna));
       }
+
+      // — Construir resumen semanal a partir de por_dia —
+      const hoy = new Date();
+      const lunesActual = lunesDeLaSemana(hoy);
+      const diasSemana = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(lunesActual);
+        d.setDate(d.getDate() + i);
+        return d;
+      });
+
+      const porDiaMap = {};
+      (data.por_dia || []).forEach((d) => {
+        const k = String(d.fecha).split("T")[0];
+        porDiaMap[k] = d.dosis;
+      });
+
+      const porDiaSemana = diasSemana.map((d, i) => {
+        const iso = isoDate(d);
+        return {
+          nombre: DIAS_SEMANA[i],
+          fecha: iso,
+          dosis: porDiaMap[iso] || 0,
+          pacientes: 0, // no disponible a nivel diario desde este endpoint
+        };
+      });
+
+      const totalDosisSemana = porDiaSemana.reduce((a, d) => a + d.dosis, 0);
+      const diasConDatos = porDiaSemana.filter((d) => d.dosis > 0).length;
+
+      setResumenSemana({
+        totalDosis: totalDosisSemana,
+        totalPacientes: "—",
+        diasConDatos,
+        promedioDiario:
+          diasConDatos > 0 ? Math.round(totalDosisSemana / diasConDatos) : 0,
+        porDia: porDiaSemana,
+      });
+
+      // — Construir comparativa semanal del mes —
+      const semanas = [];
+      const primerDia = new Date(parseInt(anio), parseInt(mes) - 1, 1);
+      const ultimoDia = new Date(parseInt(anio), parseInt(mes), 0);
+      let cursor = lunesDeLaSemana(primerDia);
+
+      while (cursor <= ultimoDia) {
+        const domingo = new Date(cursor);
+        domingo.setDate(domingo.getDate() + 6);
+        const desdeISO = isoDate(cursor);
+        const hastaISO = isoDate(domingo > ultimoDia ? ultimoDia : domingo);
+
+        const dosisS = (data.por_dia || [])
+          .filter((d) => {
+            const f = String(d.fecha).split("T")[0];
+            return f >= desdeISO && f <= hastaISO;
+          })
+          .reduce((a, d) => a + d.dosis, 0);
+
+        semanas.push({
+          desde: desdeISO,
+          hasta: hastaISO,
+          dosis: dosisS,
+          pacientes: "—",
+        });
+        cursor = new Date(cursor);
+        cursor.setDate(cursor.getDate() + 7);
+      }
+      setResumenMes({ semanas });
+
+      setPaginaVac(1);
     } catch (e) {
       setErrorVac(e.message);
       setDatosVac([]);
     } finally {
       setCargandoVac(false);
     }
-    // tiposVacuna excluido intencionalmente de las deps para no causar loop infinito
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesVac, filtroVac]);
 
@@ -156,8 +1175,6 @@ export default function Reportes() {
   }, [fetchVacunas]);
 
   // ── Fetch inventario ────────────────────────────────────
-  // El backend espera:  GET /api/reportes/inventario?periodo=mes|3meses|todos[&vacuna=nombre][&tipo=entrada|salida]
-  // El backend responde: { ok, movimientos: [{id,vacuna,tipo,cantidad,lote,fecha,...}], resumen, por_vacuna }
   const fetchInventario = useCallback(async () => {
     setCargandoInv(true);
     setErrorInv("");
@@ -167,11 +1184,12 @@ export default function Reportes() {
       if (filtroTipo) params.set("tipo", filtroTipo);
 
       const data = await apiFetch(`${API}/api/reportes/inventario?${params}`);
-      if (data) {
-        setDatosInv(data.movimientos); // campo real del backend
-        setResumenInv(data.resumen);
-        setPaginaInv(1);
-      }
+      if (!data) return;
+
+      setDatosInv(data.movimientos || []);
+      setPorVacunaInv(data.por_vacuna || []);
+      setResumenInv(data.resumen);
+      setPaginaInv(1);
     } catch (e) {
       setErrorInv(e.message);
       setDatosInv([]);
@@ -184,7 +1202,7 @@ export default function Reportes() {
     if (tab === "inventario") fetchInventario();
   }, [fetchInventario, tab]);
 
-  // ── Cálculos derivados (memoizados) ─────────────────────
+  // ── Cálculos derivados ──────────────────────────────────
   const totalDosisVac = useMemo(
     () => datosVac.reduce((a, r) => a + r.dosis, 0),
     [datosVac],
@@ -202,7 +1220,19 @@ export default function Reportes() {
     [datosInv],
   );
 
-  // ── Paginación calculada ────────────────────────────────
+  // Vacuna más aplicada
+  const vacunaMasAplicada = useMemo(
+    () => [...datosVac].sort((a, b) => b.dosis - a.dosis)[0] || null,
+    [datosVac],
+  );
+
+  // Día de mayor actividad en el mes
+  const diaPico = useMemo(() => {
+    if (!porDiaMes.length) return null;
+    return [...porDiaMes].sort((a, b) => b.dosis - a.dosis)[0];
+  }, [porDiaMes]);
+
+  // Paginación
   const totalPagVac = Math.ceil(datosVac.length / POR_PAGINA);
   const pagVacActual = Math.min(paginaVac, totalPagVac || 1);
   const datosVacPag = datosVac.slice(
@@ -217,198 +1247,37 @@ export default function Reportes() {
     pagInvActual * POR_PAGINA,
   );
 
-  // ── Nombre del mes para mostrar ─────────────────────────
   const labelMesActual =
     mesesDisponibles.find((m) => m.value === mesVac)?.label || mesVac;
 
-  // ── Exportar PDF ────────────────────────────────────────
-  function exportarPDF() {
+  // ── Handlers de exportación ─────────────────────────────
+  function handleExportarPDF() {
     try {
-      const doc = new jsPDF();
-      const estaEnVacunas = tab === "vacunas";
-
-      doc.setFillColor(2, 62, 138);
-      doc.rect(0, 0, 210, 28, "F");
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.text("SISTEMA DE VACUNACIÓN", 14, 11);
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.text("ASIC Dr. Tulio Pineda · Municipio Juan Germán Roscio", 14, 18);
-      doc.text(
-        `Generado: ${new Date().toLocaleDateString("es-VE", {
-          day: "2-digit",
-          month: "long",
-          year: "numeric",
-        })}`,
-        14,
-        24,
-      );
-
-      doc.setTextColor(2, 62, 138);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-
-      if (estaEnVacunas) {
-        doc.text(
-          `REPORTE DE VACUNAS APLICADAS — ${labelMesActual.toUpperCase()}`,
-          14,
-          38,
-        );
-      } else {
-        const pTexto =
-          periodoInv === "mes"
-            ? "ÚLTIMO MES"
-            : periodoInv === "3meses"
-              ? "ÚLTIMOS 3 MESES"
-              : "TODOS LOS PERÍODOS";
-        doc.text(`REPORTE DE MOVIMIENTOS DE INVENTARIO — ${pTexto}`, 14, 38);
-      }
-
-      doc.setDrawColor(0, 119, 182);
-      doc.setLineWidth(0.5);
-      doc.line(14, 41, 196, 41);
-
-      if (estaEnVacunas) {
-        const stats = [
-          { label: "Total dosis aplicadas", valor: totalDosisVac.toString() },
-          { label: "Pacientes atendidos", valor: totalPacientesVac.toString() },
-          { label: "Tipos de vacuna", valor: datosVac.length.toString() },
-        ];
-        stats.forEach((s, i) => {
-          const x = 14 + i * 62;
-          doc.setFillColor(240, 248, 255);
-          doc.roundedRect(x, 45, 58, 16, 2, 2, "F");
-          doc.setTextColor(2, 62, 138);
-          doc.setFontSize(14);
-          doc.setFont("helvetica", "bold");
-          doc.text(s.valor, x + 29, 55, { align: "center" });
-          doc.setFontSize(7);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(s.label, x + 29, 59, { align: "center" });
-        });
-        autoTable(doc, {
-          startY: 67,
-          head: [
-            ["Vacuna", "Dosis aplicadas", "Pacientes atendidos", "% del total"],
-          ],
-          body: datosVac.map((r) => [
-            r.vacuna,
-            r.dosis.toString(),
-            r.pacientes.toString(),
-            totalDosisVac > 0
-              ? `${((r.dosis / totalDosisVac) * 100).toFixed(1)}%`
-              : "—",
-          ]),
-          headStyles: {
-            fillColor: [0, 119, 182],
-            textColor: [255, 255, 255],
-            fontStyle: "bold",
-            fontSize: 9,
-          },
-          bodyStyles: { fontSize: 9, textColor: [55, 65, 81] },
-          alternateRowStyles: { fillColor: [240, 248, 255] },
-          columnStyles: {
-            0: { cellWidth: 75 },
-            1: { cellWidth: 38, halign: "center" },
-            2: { cellWidth: 45, halign: "center" },
-            3: { cellWidth: 30, halign: "center" },
-          },
-          foot: [
-            [
-              "TOTAL",
-              totalDosisVac.toString(),
-              totalPacientesVac.toString(),
-              "100%",
-            ],
-          ],
-          footStyles: {
-            fillColor: [2, 62, 138],
-            textColor: [255, 255, 255],
-            fontStyle: "bold",
-            fontSize: 9,
-          },
+      if (tab === "vacunas") {
+        generarPDFVacunas({
+          datosVac,
+          porDia: porDiaMes,
+          resumenSemana,
+          resumenMes,
+          labelMes: labelMesActual,
+          mesVac,
+          totalDosisVac,
+          totalPacientesVac,
         });
       } else {
-        const { entradas, salidas, balance } = resumenInv;
-        const stats = [
-          { label: "Dosis ingresadas", valor: `+${entradas}` },
-          { label: "Dosis consumidas", valor: `-${salidas}` },
-          {
-            label: "Balance neto",
-            valor: `${balance >= 0 ? "+" : ""}${balance}`,
-          },
-        ];
-        stats.forEach((s, i) => {
-          const x = 14 + i * 62;
-          doc.setFillColor(240, 248, 255);
-          doc.roundedRect(x, 45, 58, 16, 2, 2, "F");
-          doc.setTextColor(2, 62, 138);
-          doc.setFontSize(13);
-          doc.setFont("helvetica", "bold");
-          doc.text(s.valor, x + 29, 55, { align: "center" });
-          doc.setFontSize(7);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(s.label, x + 29, 59, { align: "center" });
-        });
-        autoTable(doc, {
-          startY: 67,
-          head: [["Vacuna", "Tipo", "Cantidad", "Lote", "Fecha"]],
-          body: datosInv.map((r) => [
-            r.vacuna,
-            r.tipo === "entrada" ? "↑ Entrada" : "↓ Salida",
-            `${r.tipo === "entrada" ? "+" : "-"}${r.cantidad} dosis`,
-            r.lote || "—",
-            formatFecha(r.fecha),
-          ]),
-          headStyles: {
-            fillColor: [0, 119, 182],
-            textColor: [255, 255, 255],
-            fontStyle: "bold",
-            fontSize: 9,
-          },
-          bodyStyles: { fontSize: 9, textColor: [55, 65, 81] },
-          alternateRowStyles: { fillColor: [240, 248, 255] },
-          columnStyles: {
-            0: { cellWidth: 65 },
-            1: { cellWidth: 28, halign: "center" },
-            2: { cellWidth: 35, halign: "center" },
-            3: { cellWidth: 32, halign: "center" },
-            4: { cellWidth: 28, halign: "center" },
-          },
+        generarPDFInventario({
+          datosInv,
+          resumenInv,
+          periodoInv,
+          porVacuna: porVacunaInv,
         });
       }
-
-      const totalPags = doc.getNumberOfPages();
-      for (let i = 1; i <= totalPags; i++) {
-        doc.setPage(i);
-        doc.setFontSize(7);
-        doc.setTextColor(150, 150, 150);
-        doc.setDrawColor(200, 200, 200);
-        doc.line(14, 286, 196, 286);
-        doc.text(
-          `Sistema de Vacunación ASIC Dr. Tulio Pineda — Página ${i} de ${totalPags}`,
-          105,
-          290,
-          { align: "center" },
-        );
-      }
-
-      doc.save(
-        estaEnVacunas
-          ? `reporte_vacunas_${mesVac}.pdf`
-          : `reporte_inventario_${new Date().toISOString().split("T")[0]}.pdf`,
-      );
     } catch (err) {
       console.error("[exportarPDF]", err);
       alert("No se pudo generar el PDF. Intente nuevamente.");
     }
   }
 
-  // ── Exportar Excel ──────────────────────────────────────
   function exportarExcel() {
     try {
       const estaEnVacunas = tab === "vacunas";
@@ -416,11 +1285,27 @@ export default function Reportes() {
       const hoy = new Date().toLocaleDateString("es-VE");
 
       if (estaEnVacunas) {
+        // Hoja 1: Resumen del mes
         const filas = [
           ["SISTEMA DE VACUNACIÓN — ASIC DR. TULIO PINEDA", "", "", ""],
           [`Reporte de vacunas aplicadas — ${labelMesActual}`, "", "", ""],
           [`Generado: ${hoy}`, "", "", ""],
           [],
+          ["RESUMEN GENERAL", "", "", ""],
+          ["Total dosis", totalDosisVac, "", ""],
+          ["Total pacientes", totalPacientesVac, "", ""],
+          ["Tipos de vacuna", datosVac.length, "", ""],
+          ["Vacuna más aplicada", vacunaMasAplicada?.vacuna || "—", "", ""],
+          [
+            "Día pico",
+            diaPico
+              ? `${formatFecha(diaPico.fecha)} (${diaPico.dosis} dosis)`
+              : "—",
+            "",
+            "",
+          ],
+          [],
+          ["DISTRIBUCIÓN POR VACUNA", "", "", ""],
           ["VACUNA", "DOSIS APLICADAS", "PACIENTES ATENDIDOS", "% DEL TOTAL"],
           ...datosVac.map((r) => [
             r.vacuna,
@@ -440,25 +1325,59 @@ export default function Reportes() {
           { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
           { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } },
         ];
-        XLSX.utils.book_append_sheet(wb, ws, "Vacunas aplicadas");
+        XLSX.utils.book_append_sheet(wb, ws, "Resumen mensual");
 
-        const resumen = [
-          ["RESUMEN DEL PERÍODO", ""],
-          [],
-          ["Indicador", "Valor"],
-          ["Período", labelMesActual],
-          ["Total dosis", totalDosisVac],
-          ["Total pacientes", totalPacientesVac],
-          ["Tipos de vacuna", datosVac.length],
-          [
-            "Vacuna más aplicada",
-            [...datosVac].sort((a, b) => b.dosis - a.dosis)[0]?.vacuna || "—",
-          ],
-          ["Fecha de generación", hoy],
-        ];
-        const wsR = XLSX.utils.aoa_to_sheet(resumen);
-        wsR["!cols"] = [{ wch: 24 }, { wch: 20 }];
-        XLSX.utils.book_append_sheet(wb, wsR, "Resumen");
+        // Hoja 2: Evolución diaria
+        if (porDiaMes.length > 0) {
+          const filasD = [
+            ["EVOLUCIÓN DIARIA", ""],
+            [],
+            ["FECHA", "DOSIS"],
+            ...porDiaMes.map((d) => [formatFecha(d.fecha), d.dosis]),
+          ];
+          const wsD = XLSX.utils.aoa_to_sheet(filasD);
+          wsD["!cols"] = [{ wch: 16 }, { wch: 12 }];
+          XLSX.utils.book_append_sheet(wb, wsD, "Evolución diaria");
+        }
+
+        // Hoja 3: Semanas del mes
+        if (resumenMes?.semanas?.length > 0) {
+          const filasS = [
+            ["COMPARATIVA SEMANAL", "", "", ""],
+            [],
+            ["SEMANA", "DESDE", "HASTA", "DOSIS"],
+            ...resumenMes.semanas.map((s, i) => [
+              `Semana ${i + 1}`,
+              formatFecha(s.desde),
+              formatFecha(s.hasta),
+              s.dosis,
+            ]),
+          ];
+          const wsS = XLSX.utils.aoa_to_sheet(filasS);
+          wsS["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 10 }];
+          XLSX.utils.book_append_sheet(wb, wsS, "Comparativa semanal");
+        }
+
+        // Hoja 4: Semana actual
+        if (resumenSemana?.porDia) {
+          const filasW = [
+            ["SEMANA ACTUAL", "", "", ""],
+            [],
+            ["DÍA", "FECHA", "DOSIS", "ESTADO"],
+            ...resumenSemana.porDia.map((d) => [
+              d.nombre,
+              formatFecha(d.fecha),
+              d.dosis,
+              d.dosis > 0 ? "Activo" : "Sin datos",
+            ]),
+            [],
+            ["Total semana", "", resumenSemana.totalDosis, ""],
+            ["Promedio diario", "", resumenSemana.promedioDiario, ""],
+          ];
+          const wsW = XLSX.utils.aoa_to_sheet(filasW);
+          wsW["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 12 }];
+          XLSX.utils.book_append_sheet(wb, wsW, "Semana actual");
+        }
       } else {
         const { entradas, salidas, balance } = resumenInv;
         const filas = [
@@ -466,20 +1385,21 @@ export default function Reportes() {
           ["Reporte de movimientos de inventario", "", "", "", ""],
           [`Generado: ${hoy}`, "", "", "", ""],
           [],
-          ["VACUNA", "TIPO", "CANTIDAD", "LOTE", "FECHA"],
+          ["RESUMEN", "", "", "", ""],
+          ["Total entradas", entradas, "", "", ""],
+          ["Total salidas", salidas, "", "", ""],
+          ["Balance neto", balance, "", "", ""],
+          [],
+          ["DETALLE DE MOVIMIENTOS", "", "", "", ""],
+          ["VACUNA", "TIPO", "CANTIDAD", "LOTE", "VENCIMIENTO", "FECHA"],
           ...datosInv.map((r) => [
             r.vacuna,
             r.tipo === "entrada" ? "Entrada" : "Salida",
             r.tipo === "entrada" ? r.cantidad : -r.cantidad,
             r.lote || "—",
+            r.vencimiento ? formatFecha(r.vencimiento) : "—",
             formatFecha(r.fecha),
           ]),
-          [],
-          ["RESUMEN", "", "", "", ""],
-          ["Total entradas", entradas, "", "", ""],
-          ["Total salidas", salidas, "", "", ""],
-          ["Balance neto", balance, "", "", ""],
-          ["Fecha", hoy, "", "", ""],
         ];
         const ws = XLSX.utils.aoa_to_sheet(filas);
         ws["!cols"] = [
@@ -488,13 +1408,40 @@ export default function Reportes() {
           { wch: 12 },
           { wch: 16 },
           { wch: 14 },
+          { wch: 14 },
         ];
         ws["!merges"] = [
-          { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
-          { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
-          { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } },
+          { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: 5 } },
         ];
         XLSX.utils.book_append_sheet(wb, ws, "Movimientos inventario");
+
+        // Hoja 2: Balance por vacuna
+        if (porVacunaInv.length > 0) {
+          const vacunaMap = {};
+          porVacunaInv.forEach((r) => {
+            if (!vacunaMap[r.vacuna])
+              vacunaMap[r.vacuna] = { entradas: 0, salidas: 0 };
+            if (r.tipo === "entrada")
+              vacunaMap[r.vacuna].entradas += r.cantidad;
+            else vacunaMap[r.vacuna].salidas += r.cantidad;
+          });
+          const filas2 = [
+            ["BALANCE POR VACUNA", "", "", ""],
+            [],
+            ["VACUNA", "ENTRADAS", "SALIDAS", "BALANCE"],
+            ...Object.entries(vacunaMap).map(([n, v]) => [
+              n,
+              v.entradas,
+              v.salidas,
+              v.entradas - v.salidas,
+            ]),
+          ];
+          const ws2 = XLSX.utils.aoa_to_sheet(filas2);
+          ws2["!cols"] = [{ wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+          XLSX.utils.book_append_sheet(wb, ws2, "Balance por vacuna");
+        }
       }
 
       XLSX.writeFile(
@@ -526,6 +1473,10 @@ export default function Reportes() {
     { label: "Perfil", ruta: "/perfil", activo: false },
   ];
 
+  const cargando = tab === "vacunas" ? cargandoVac : cargandoInv;
+  const sinDatos =
+    tab === "vacunas" ? datosVac.length === 0 : datosInv.length === 0;
+
   // ── Render ──────────────────────────────────────────────
   return (
     <div className="min-h-screen flex bg-blue-50">
@@ -536,11 +1487,9 @@ export default function Reportes() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* ── Sidebar ─────────────────────────────────────── */}
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-blue-900 flex flex-col z-30 transition-transform duration-300 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } lg:translate-x-0 lg:w-60`}
+        className={`fixed top-0 left-0 h-full w-64 bg-blue-900 flex flex-col z-30 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 lg:w-60`}
       >
         <div className="flex items-center justify-between px-4 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -568,11 +1517,7 @@ export default function Reportes() {
                 setSidebarOpen(false);
                 navigate(item.ruta);
               }}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition text-left touch-manipulation ${
-                item.activo
-                  ? "bg-white/15 text-white"
-                  : "text-white/55 hover:bg-white/10 hover:text-white"
-              }`}
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition text-left touch-manipulation ${item.activo ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"}`}
             >
               <span className="w-5 h-5 flex-shrink-0">
                 {item.label === "Inicio" && <IcoHome />}
@@ -613,7 +1558,7 @@ export default function Reportes() {
         </div>
       </aside>
 
-      {/* Contenido */}
+      {/* ── Contenido ───────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 lg:ml-60">
         <header className="lg:hidden sticky top-0 z-10 bg-blue-900 border-b border-white/10 px-4 py-3 flex items-center justify-between">
           <button
@@ -647,11 +1592,7 @@ export default function Reportes() {
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition touch-manipulation whitespace-nowrap ${
-                  tab === t.key
-                    ? "bg-blue-600 text-white shadow-sm"
-                    : "text-blue-700 hover:bg-blue-100"
-                }`}
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition touch-manipulation whitespace-nowrap ${tab === t.key ? "bg-blue-600 text-white shadow-sm" : "text-blue-700 hover:bg-blue-100"}`}
               >
                 {t.label}
               </button>
@@ -692,36 +1633,34 @@ export default function Reportes() {
                 </select>
                 <div className="flex gap-2 ml-auto">
                   <button
-                    onClick={exportarPDF}
-                    disabled={cargandoVac || datosVac.length === 0}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold rounded-xl text-xs transition touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={handleExportarPDF}
+                    disabled={cargandoVac || sinDatos}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold rounded-xl text-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <IcoDescargar /> PDF
                   </button>
                   <button
                     onClick={exportarExcel}
-                    disabled={cargandoVac || datosVac.length === 0}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 font-semibold rounded-xl text-xs transition touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={cargandoVac || sinDatos}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 font-semibold rounded-xl text-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <IcoDescargar /> Excel
                   </button>
                 </div>
               </div>
 
-              {/* Error */}
               {errorVac && (
                 <MensajeError mensaje={errorVac} onReintentar={fetchVacunas} />
               )}
 
-              {/* Skeleton / contenido */}
               {cargandoVac ? (
                 <SkeletonReporte />
               ) : (
                 <>
-                  {/* Tarjetas resumen */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-5">
+                  {/* KPIs */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-5">
                     <StatCard
-                      label="Total dosis aplicadas"
+                      label="Total dosis (mes)"
                       valor={totalDosisVac}
                       color="blue"
                       icono={<IcoVacuna />}
@@ -738,12 +1677,248 @@ export default function Reportes() {
                       color="blue"
                       icono={<IcoReportes />}
                     />
+                    <StatCard
+                      label="Dosis esta semana"
+                      valor={resumenSemana?.totalDosis ?? "—"}
+                      color="green"
+                      icono={<IcoCheck />}
+                    />
                   </div>
 
-                  {/* Gráfica */}
+                  {/* Fila: vacuna pico + día pico */}
+                  {(vacunaMasAplicada || diaPico) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                      {vacunaMasAplicada && (
+                        <div className="bg-white border border-blue-100 rounded-2xl p-4 flex items-center gap-4">
+                          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <IcoVacuna />
+                          </div>
+                          <div>
+                            <p className="text-xs text-blue-400 font-semibold uppercase tracking-wide">
+                              Vacuna más aplicada
+                            </p>
+                            <p className="text-gray-900 font-bold text-sm">
+                              {vacunaMasAplicada.vacuna}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {vacunaMasAplicada.dosis} dosis ·{" "}
+                              {vacunaMasAplicada.pacientes} pacientes
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {diaPico && (
+                        <div className="bg-white border border-blue-100 rounded-2xl p-4 flex items-center gap-4">
+                          <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <IcoCheck />
+                          </div>
+                          <div>
+                            <p className="text-xs text-green-600 font-semibold uppercase tracking-wide">
+                              Día de mayor actividad
+                            </p>
+                            <p className="text-gray-900 font-bold text-sm">
+                              {formatFecha(diaPico.fecha)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {diaPico.dosis} dosis aplicadas
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Gráfica evolución diaria */}
+                  {porDiaMes.length > 0 && (
+                    <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-4">
+                        Evolución diaria — {labelMesActual}
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <div className="flex items-end gap-1 h-28 min-w-[400px] pb-1">
+                          {porDiaMes.map((d, i) => {
+                            const maxD = Math.max(
+                              ...porDiaMes.map((x) => x.dosis),
+                              1,
+                            );
+                            return (
+                              <div
+                                key={i}
+                                className="flex-1 flex flex-col items-center gap-0.5 min-w-[6px]"
+                                title={`${formatFecha(d.fecha)}: ${d.dosis} dosis`}
+                              >
+                                <div
+                                  className="w-full rounded-t transition-all duration-500"
+                                  style={{
+                                    height: `${Math.max(2, (d.dosis / maxD) * 96)}px`,
+                                    background: "#1d4ed8",
+                                    opacity: d.dosis === 0 ? 0.15 : 1,
+                                  }}
+                                />
+                                {i % 7 === 0 && (
+                                  <span
+                                    className="text-gray-400 text-center leading-tight"
+                                    style={{ fontSize: "5px" }}
+                                  >
+                                    {formatFechaCortaISO(d.fecha)}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Semana actual */}
+                  {resumenSemana && (
+                    <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                        Semana actual
+                      </h3>
+                      <div className="grid grid-cols-7 gap-1 mb-4">
+                        {(resumenSemana.porDia || []).map((dia) => {
+                          const maxD = Math.max(
+                            ...resumenSemana.porDia.map((d) => d.dosis),
+                            1,
+                          );
+                          return (
+                            <div
+                              key={dia.nombre}
+                              className="flex flex-col items-center gap-1"
+                            >
+                              <span className="text-xs font-semibold text-gray-500">
+                                {dia.nombre}
+                              </span>
+                              <div className="w-full flex flex-col items-center justify-end h-16 bg-gray-50 rounded-lg overflow-hidden relative">
+                                <div
+                                  className="w-full rounded-t transition-all duration-500"
+                                  style={{
+                                    height: `${dia.dosis > 0 ? Math.max(8, (dia.dosis / maxD) * 60) : 0}px`,
+                                    background:
+                                      dia.dosis > 0 ? "#16a34a" : "transparent",
+                                  }}
+                                />
+                              </div>
+                              <span
+                                className={`text-xs font-bold ${dia.dosis > 0 ? "text-green-600" : "text-gray-300"}`}
+                              >
+                                {dia.dosis}
+                              </span>
+                              <span
+                                className="text-gray-400 text-center leading-tight"
+                                style={{ fontSize: "9px" }}
+                              >
+                                {formatFechaCortaISO(dia.fecha)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex gap-4 text-xs text-gray-500 border-t border-gray-100 pt-3">
+                        <span>
+                          Total semana:{" "}
+                          <strong className="text-gray-800">
+                            {resumenSemana.totalDosis}
+                          </strong>{" "}
+                          dosis
+                        </span>
+                        <span>
+                          Días activos:{" "}
+                          <strong className="text-gray-800">
+                            {resumenSemana.diasConDatos}
+                          </strong>
+                        </span>
+                        <span>
+                          Promedio:{" "}
+                          <strong className="text-gray-800">
+                            {resumenSemana.promedioDiario}
+                          </strong>{" "}
+                          dosis/día
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Comparativa semanal del mes */}
+                  {resumenMes?.semanas?.length > 0 && (
+                    <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                        Comparativa semanal — {labelMesActual}
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-blue-50 border-b border-blue-100">
+                              {["Semana", "Período", "Dosis", "Variación"].map(
+                                (h) => (
+                                  <th
+                                    key={h}
+                                    className="text-left px-3 py-2 text-xs font-semibold text-blue-400 uppercase tracking-wider"
+                                  >
+                                    {h}
+                                  </th>
+                                ),
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-blue-50">
+                            {resumenMes.semanas.map((sem, idx) => {
+                              const prev =
+                                idx > 0
+                                  ? resumenMes.semanas[idx - 1].dosis
+                                  : null;
+                              const diff =
+                                prev !== null ? sem.dosis - prev : null;
+                              const pct =
+                                prev !== null && prev > 0
+                                  ? ((diff / prev) * 100).toFixed(0)
+                                  : null;
+                              return (
+                                <tr
+                                  key={idx}
+                                  className="hover:bg-blue-50/30 transition"
+                                >
+                                  <td className="px-3 py-2 font-semibold text-gray-700">
+                                    Semana {idx + 1}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-500 text-xs">
+                                    {formatFecha(sem.desde)} –{" "}
+                                    {formatFecha(sem.hasta)}
+                                  </td>
+                                  <td className="px-3 py-2 font-bold text-blue-700">
+                                    {sem.dosis}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {diff !== null ? (
+                                      <span
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${diff >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
+                                      >
+                                        {diff >= 0 ? "▲" : "▼"} {Math.abs(diff)}
+                                        {pct ? ` (${pct}%)` : ""}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-300 text-xs">
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gráfica por vacuna */}
                   <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
                     <h3 className="text-sm font-semibold text-gray-700 mb-4">
-                      Dosis aplicadas por vacuna — {labelMesActual}
+                      Dosis por tipo de vacuna — {labelMesActual}
                     </h3>
                     {datosVac.length === 0 ? (
                       <p className="text-gray-400 text-sm text-center py-6">
@@ -752,7 +1927,7 @@ export default function Reportes() {
                     ) : (
                       <div className="overflow-x-auto">
                         <div className="flex items-end gap-2 sm:gap-3 h-36 min-w-[320px] pb-1">
-                          {datosVac.map((r) => (
+                          {datosVac.map((r, idx) => (
                             <div
                               key={r.vacuna}
                               className="flex-1 flex flex-col items-center gap-1 min-w-[36px]"
@@ -764,8 +1939,10 @@ export default function Reportes() {
                                 className="w-full rounded-t-lg transition-all duration-700"
                                 style={{
                                   height: `${Math.max(8, (r.dosis / maxDosis) * 100)}px`,
-                                  // Gris neutro para vacunas sin color asignado (evita el rojo engañoso)
-                                  background: BAR_COLOR[r.vacuna] || "#6b7280",
+                                  background:
+                                    COLORES_GRAFICOS[
+                                      idx % COLORES_GRAFICOS.length
+                                    ],
                                 }}
                               />
                               <span className="text-xs text-gray-400 text-center leading-tight">
@@ -780,8 +1957,13 @@ export default function Reportes() {
                     )}
                   </div>
 
-                  {/* Tabla */}
+                  {/* Tabla detalle */}
                   <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-blue-50 bg-blue-50/40">
+                      <h3 className="text-sm font-semibold text-gray-700">
+                        Detalle por vacuna
+                      </h3>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-blue-50 border-b border-blue-100">
@@ -812,12 +1994,21 @@ export default function Reportes() {
                               </td>
                             </tr>
                           ) : (
-                            datosVacPag.map((r) => (
+                            datosVacPag.map((r, idx) => (
                               <tr
                                 key={r.vacuna}
                                 className="hover:bg-blue-50/40 transition"
                               >
                                 <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">
+                                  <span
+                                    className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle"
+                                    style={{
+                                      background:
+                                        COLORES_GRAFICOS[
+                                          idx % COLORES_GRAFICOS.length
+                                        ],
+                                    }}
+                                  />
                                   {r.vacuna}
                                 </td>
                                 <td className="px-4 py-3">
@@ -831,7 +2022,9 @@ export default function Reportes() {
                                         style={{
                                           width: `${(r.dosis / maxDosis) * 100}%`,
                                           background:
-                                            BAR_COLOR[r.vacuna] || "#6b7280",
+                                            COLORES_GRAFICOS[
+                                              idx % COLORES_GRAFICOS.length
+                                            ],
                                         }}
                                       />
                                     </div>
@@ -868,7 +2061,6 @@ export default function Reportes() {
           {/* ══ TAB INVENTARIO ═══════════════════════════════ */}
           {tab === "inventario" && (
             <div>
-              {/* Filtros */}
               <div className="flex flex-wrap gap-2 sm:gap-3 mb-5 items-center">
                 <select
                   value={periodoInv}
@@ -902,16 +2094,16 @@ export default function Reportes() {
                 </select>
                 <div className="flex gap-2 ml-auto">
                   <button
-                    onClick={exportarPDF}
+                    onClick={handleExportarPDF}
                     disabled={cargandoInv || datosInv.length === 0}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold rounded-xl text-xs transition touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold rounded-xl text-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <IcoDescargar /> PDF
                   </button>
                   <button
                     onClick={exportarExcel}
                     disabled={cargandoInv || datosInv.length === 0}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 font-semibold rounded-xl text-xs transition touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 font-semibold rounded-xl text-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <IcoDescargar /> Excel
                   </button>
@@ -929,7 +2121,6 @@ export default function Reportes() {
                 <SkeletonReporte />
               ) : (
                 <>
-                  {/* Tarjetas */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-5">
                     <StatCard
                       label="Dosis ingresadas"
@@ -951,7 +2142,81 @@ export default function Reportes() {
                     />
                   </div>
 
-                  {/* Gráfica */}
+                  {/* Balance por vacuna */}
+                  {porVacunaInv.length > 0 &&
+                    (() => {
+                      const vacunaMap = {};
+                      porVacunaInv.forEach((r) => {
+                        if (!vacunaMap[r.vacuna])
+                          vacunaMap[r.vacuna] = { entradas: 0, salidas: 0 };
+                        if (r.tipo === "entrada")
+                          vacunaMap[r.vacuna].entradas += r.cantidad;
+                        else vacunaMap[r.vacuna].salidas += r.cantidad;
+                      });
+                      return (
+                        <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden mb-5">
+                          <div className="px-4 py-3 border-b border-blue-50 bg-blue-50/40">
+                            <h3 className="text-sm font-semibold text-gray-700">
+                              Balance por vacuna
+                            </h3>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-blue-50 border-b border-blue-100">
+                                <tr>
+                                  {[
+                                    "Vacuna",
+                                    "Entradas",
+                                    "Salidas",
+                                    "Balance",
+                                  ].map((h) => (
+                                    <th
+                                      key={h}
+                                      className="text-left px-4 py-3 text-xs font-semibold text-blue-400 uppercase tracking-wider"
+                                    >
+                                      {h}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-blue-50">
+                                {Object.entries(vacunaMap).map(
+                                  ([nombre, v]) => {
+                                    const bal = v.entradas - v.salidas;
+                                    return (
+                                      <tr
+                                        key={nombre}
+                                        className="hover:bg-blue-50/40 transition"
+                                      >
+                                        <td className="px-4 py-3 font-semibold text-gray-800">
+                                          {nombre}
+                                        </td>
+                                        <td className="px-4 py-3 font-bold text-green-600">
+                                          +{v.entradas}
+                                        </td>
+                                        <td className="px-4 py-3 font-bold text-red-500">
+                                          -{v.salidas}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span
+                                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${bal >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
+                                          >
+                                            {bal >= 0 ? "+" : ""}
+                                            {bal}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  },
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                  {/* Gráfica inventario */}
                   <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6 mb-5">
                     <h3 className="text-sm font-semibold text-gray-700 mb-1">
                       Movimientos por vacuna
@@ -973,8 +2238,7 @@ export default function Reportes() {
                     ) : (
                       <div className="overflow-x-auto">
                         <div className="flex items-end gap-2 sm:gap-3 h-36 min-w-[320px] pb-1">
-                          {datosInv.slice(0, 10).map((r) => (
-                            // key estable: id único del movimiento en lugar del índice
+                          {datosInv.slice(0, 12).map((r) => (
                             <div
                               key={r.id}
                               className="flex-1 flex flex-col items-center gap-1 min-w-[36px]"
@@ -1002,8 +2266,13 @@ export default function Reportes() {
                     )}
                   </div>
 
-                  {/* Tabla */}
+                  {/* Tabla movimientos */}
                   <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-blue-50 bg-blue-50/40">
+                      <h3 className="text-sm font-semibold text-gray-700">
+                        Detalle de movimientos
+                      </h3>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-blue-50 border-b border-blue-100">
@@ -1013,6 +2282,7 @@ export default function Reportes() {
                               "Tipo",
                               "Cantidad",
                               "Lote",
+                              "Vencimiento",
                               "Fecha",
                             ].map((h) => (
                               <th
@@ -1028,7 +2298,7 @@ export default function Reportes() {
                           {datosInvPag.length === 0 ? (
                             <tr>
                               <td
-                                colSpan={5}
+                                colSpan={6}
                                 className="px-4 py-10 text-center text-gray-400 text-sm"
                               >
                                 Sin movimientos.
@@ -1045,18 +2315,14 @@ export default function Reportes() {
                                 </td>
                                 <td className="px-4 py-3">
                                   <span
-                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                                      r.tipo === "entrada"
-                                        ? "bg-green-100 text-green-700"
-                                        : "bg-blue-100 text-blue-700"
-                                    }`}
+                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold ${r.tipo === "entrada" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}
                                   >
                                     {r.tipo === "entrada"
                                       ? "↑ Entrada"
                                       : "↓ Salida"}
                                   </span>
                                 </td>
-                                <td className="px-4 py-3 font-bold text-gray-800">
+                                <td className="px-4 py-3 font-bold">
                                   <span
                                     className={
                                       r.tipo === "entrada"
@@ -1073,6 +2339,11 @@ export default function Reportes() {
                                 </td>
                                 <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                                   {r.lote || "—"}
+                                </td>
+                                <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                  {r.vencimiento
+                                    ? formatFecha(r.vencimiento)
+                                    : "—"}
                                 </td>
                                 <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                                   {formatFecha(r.fecha)}
@@ -1102,12 +2373,12 @@ export default function Reportes() {
   );
 }
 
-// ── Skeleton de carga ───────────────────────────────────────
+// ── Skeleton ────────────────────────────────────────────────
 function SkeletonReporte() {
   return (
     <div className="animate-pulse space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {[1, 2, 3].map((i) => (
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
             className="bg-white border border-blue-100 rounded-2xl p-4 h-24"
@@ -1118,13 +2389,14 @@ function SkeletonReporte() {
           </div>
         ))}
       </div>
+      <div className="bg-white border border-blue-100 rounded-2xl h-40" />
       <div className="bg-white border border-blue-100 rounded-2xl h-52" />
       <div className="bg-white border border-blue-100 rounded-2xl h-64" />
     </div>
   );
 }
 
-// ── Mensaje de error con reintento ──────────────────────────
+// ── Mensaje error ───────────────────────────────────────────
 function MensajeError({ mensaje, onReintentar }) {
   return (
     <div className="flex items-center justify-between gap-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 mb-5 text-sm">
@@ -1206,11 +2478,7 @@ function Paginacion({
             <button
               key={n}
               onClick={() => setPagina(n)}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-semibold transition border ${
-                n === paginaActual
-                  ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                  : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"
-              }`}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-semibold transition border ${n === paginaActual ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-gray-600 border-blue-200 hover:bg-blue-50"}`}
             >
               {n}
             </button>
@@ -1251,7 +2519,7 @@ function BtnPag({ onClick, disabled, children }) {
   );
 }
 
-// ── Stat card ───────────────────────────────────────────────
+// ── StatCard ────────────────────────────────────────────────
 function StatCard({ label, valor, color, icono }) {
   const e =
     {
