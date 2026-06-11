@@ -113,7 +113,12 @@ function _headerCompacto(
   doc.setFontSize(7);
   doc.text(labelMes.toUpperCase(), 12, 16);
 }
+const logo = new Image();
+logo.src = "/logo-t.png"; // archivo dentro de public
 
+logo.onload = () => {
+  generarPDF(logo);
+};
 // ═══════════════════════════════════════════════════════════
 // ── PDF VACUNAS ─────────────────────────────────────────────
 //   • Logo plataforma (jeringa vectorial) en lugar de cruz
@@ -147,45 +152,19 @@ function generarPDFVacunas({
   const VERDE = [22, 163, 74];
 
   // ── Logotipo de la plataforma (jeringa vectorial) ────────
-  function dibujarLogo(x, y, size) {
-    const s = size / 18;
+  function dibujarLogo(x, y, size, logo) {
+  doc.setFillColor(...AZUL_MED);
+  doc.roundedRect(x, y, size, size, 3, 3, "F");
 
-    // Fondo cuadrado redondeado
-    doc.setFillColor(...AZUL_MED);
-    doc.roundedRect(x, y, size, size, 3 * s, 3 * s, "F");
-
-    // Barrel (cuerpo cilíndrico de la jeringa)
-    doc.setFillColor(...BLANCO);
-    doc.roundedRect(x + 4 * s, y + 6 * s, 8 * s, 4 * s, 1 * s, 1 * s, "F");
-
-    // Émbolo / pistón (bloque más oscuro dentro del barrel)
-    doc.setFillColor(...AZUL_CLARO);
-    doc.rect(x + 4 * s, y + 7 * s, 2.5 * s, 2 * s, "F");
-
-    // Aguja
-    doc.setFillColor(...BLANCO);
-    doc.rect(x + 12 * s, y + 7.5 * s, 3.5 * s, 1 * s, "F");
-    // Punta triangular de la aguja
-    doc.triangle(
-      x + 15.5 * s,
-      y + 7.5 * s,
-      x + 15.5 * s,
-      y + 8.5 * s,
-      x + 17 * s,
-      y + 8 * s,
-      "F",
-    );
-
-    // Tope trasero (ala de agarre)
-    doc.setFillColor(...BLANCO);
-    doc.rect(x + 3 * s, y + 5 * s, 1 * s, 8 * s, "F");
-
-    // Cruz médica pequeña (esquina superior derecha del ícono)
-    doc.setFillColor(...AZUL_CLARO);
-    doc.rect(x + 13.5 * s, y + 1.5 * s, 3 * s, 1 * s, "F"); // horizontal
-    doc.rect(x + 14.5 * s, y + 0.5 * s, 1 * s, 3 * s, "F"); // vertical
-  }
-
+  doc.addImage(
+    logo,
+    "PNG",
+    x + 2,
+    y + 2,
+    size - 4,
+    size - 4
+  );
+}
   // ════════════════════════════════════════════════════════
   // PÁGINA 1 — PORTADA + KPIs + DISTRIBUCIÓN POR VACUNA
   // ════════════════════════════════════════════════════════
