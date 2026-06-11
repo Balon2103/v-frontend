@@ -113,22 +113,21 @@ function _headerCompacto(
   doc.setFontSize(7);
   doc.text(labelMes.toUpperCase(), 12, 16);
 }
-const logo = new Image();
-logo.src = "/logo-t.png";
+async function getBase64Image(url) {
+  const response = await fetch(url);
 
-logo.onload = () => {
-  generarPDFVacunas({
-    datosVac,
-    porDia,
-    resumenSemana,
-    labelMes,
-    mesVac,
-    totalDosisVac,
-    totalPacientesVac,
-    porVacunador,
-    logo,
+  if (!response.ok) {
+    throw new Error(`No se encontró la imagen: ${url}`);
+  }
+
+  const blob = await response.blob();
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
   });
-};
+}
 // ═══════════════════════════════════════════════════════════
 // ── PDF VACUNAS ─────────────────────────────────────────────
 //   • Logo plataforma (jeringa vectorial) en lugar de cruz
@@ -136,7 +135,7 @@ logo.onload = () => {
 //   • Sin sección "Comparativa semanal del mes"
 //   • Distribución por vacuna con detalle de vacunador
 // ═══════════════════════════════════════════════════════════
-function generarPDFVacunas({
+async function generarPDFVacunas({
   datosVac,
   porDia,
   resumenSemana,
@@ -146,9 +145,10 @@ function generarPDFVacunas({
   totalDosisVac,
   totalPacientesVac,
   porVacunador,
-  logo // [{ vacuna, vacunador, dosis, pacientes }]
+  logo, // [{ vacuna, vacunador, dosis, pacientes }]
 }) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const logoBase64 = await getBase64Image("/logo-t.png");
   const W = 210,
     H = 297;
 
@@ -163,19 +163,12 @@ function generarPDFVacunas({
   const VERDE = [22, 163, 74];
 
   // ── Logotipo de la plataforma (jeringa vectorial) ────────
-  function dibujarLogo(x, y, size, logo) {
-  doc.setFillColor(...AZUL_MED);
-  doc.roundedRect(x, y, size, size, 3, 3, "F");
+  function dibujarLogo(x, y, size) {
+    doc.setFillColor(...AZUL_MED);
+    doc.roundedRect(x, y, size, size, 3, 3, "F");
 
-  doc.addImage(
-    logo,
-    "PNG",
-    x + 2,
-    y + 2,
-    size - 4,
-    size - 4
-  );
-}
+    doc.addImage(logoBase64, "PNG", x + 2, y + 2, size - 4, size - 4);
+  }
   // ════════════════════════════════════════════════════════
   // PÁGINA 1 — PORTADA + KPIs + DISTRIBUCIÓN POR VACUNA
   // ════════════════════════════════════════════════════════
@@ -189,7 +182,7 @@ function generarPDFVacunas({
   doc.triangle(W - 30, 0, W, 0, W, 30, "F");
 
   // Logotipo (jeringa)
-  dibujarLogo(12, 10, 18, logo);
+  dibujarLogo(12, 10, 18);
 
   // Nombre de la plataforma (junto al logo)
   doc.setTextColor(...BLANCO);
@@ -1204,19 +1197,18 @@ export default function Reportes() {
     mesesDisponibles.find((m) => m.value === mesVac)?.label || mesVac;
 
   // ── Handlers de exportación ─────────────────────────────
-  function handleExportarPDF() {
+  async function handleExportarPDF() {
     try {
       if (tab === "vacunas") {
-        generarPDFVacunas({
+        await generarPDFVacunas({
           datosVac,
           porDia: porDiaMes,
           resumenSemana,
-          // resumenMes eliminado del PDF
           labelMes: labelMesActual,
           mesVac,
           totalDosisVac,
           totalPacientesVac,
-          porVacunador: porVacunadorVac, // NUEVO: desglose por vacunador
+          porVacunador: porVacunadorVac,
         });
       } else {
         generarPDFInventario({
