@@ -114,10 +114,20 @@ function _headerCompacto(
   doc.text(labelMes.toUpperCase(), 12, 16);
 }
 const logo = new Image();
-logo.src = "/logo-t.png"; // archivo dentro de public
+logo.src = "/logo-t.png";
 
 logo.onload = () => {
-  generarPDF(logo);
+  generarPDFVacunas({
+    datosVac,
+    porDia,
+    resumenSemana,
+    labelMes,
+    mesVac,
+    totalDosisVac,
+    totalPacientesVac,
+    porVacunador,
+    logo,
+  });
 };
 // ═══════════════════════════════════════════════════════════
 // ── PDF VACUNAS ─────────────────────────────────────────────
@@ -135,7 +145,8 @@ function generarPDFVacunas({
   mesVac,
   totalDosisVac,
   totalPacientesVac,
-  porVacunador, // [{ vacuna, vacunador, dosis, pacientes }]
+  porVacunador,
+  logo // [{ vacuna, vacunador, dosis, pacientes }]
 }) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210,
@@ -178,7 +189,7 @@ function generarPDFVacunas({
   doc.triangle(W - 30, 0, W, 0, W, 30, "F");
 
   // Logotipo (jeringa)
-  dibujarLogo(12, 10, 18);
+  dibujarLogo(12, 10, 18, logo);
 
   // Nombre de la plataforma (junto al logo)
   doc.setTextColor(...BLANCO);
