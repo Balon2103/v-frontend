@@ -182,7 +182,7 @@ async function generarPDFVacunas({
   doc.triangle(W - 30, 0, W, 0, W, 30, "F");
 
   // Logotipo (jeringa)
-  dibujarLogo(12, 10, 18);
+  dibujarLogo(22, 20, 28);
 
   // Nombre de la plataforma (junto al logo)
   doc.setTextColor(...BLANCO);
