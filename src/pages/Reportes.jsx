@@ -167,7 +167,7 @@ async function generarPDFVacunas({
     doc.setFillColor(...AZUL_MED);
     doc.roundedRect(x, y, size, size, 3, 3, "F");
 
-    doc.addImage(logoBase64, "PNG", x + 2, y + 2, size - 4, size - 4);
+    doc.addImage(logoBase64, "PNG", x + 2, y + 2, size - 8, size - 8);
   }
   // ════════════════════════════════════════════════════════
   // PÁGINA 1 — PORTADA + KPIs + DISTRIBUCIÓN POR VACUNA
