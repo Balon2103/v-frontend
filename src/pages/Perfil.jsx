@@ -1,38 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
-// ── Usuarios demo (se reemplazará con fetch al backend) ─────
-const USUARIOS_DEMO = [
-  {
-    id: 2,
-    nombre: "María",
-    apellido: "González",
-    cedula: "V-11223344",
-    email: "maria@asic.gob.ve",
-    rol: "personal",
-    activo: true,
-  },
-  {
-    id: 3,
-    nombre: "Juan",
-    apellido: "Pérez",
-    cedula: "V-55667788",
-    email: "juan@asic.gob.ve",
-    rol: "personal",
-    activo: true,
-  },
-  {
-    id: 4,
-    nombre: "Ana",
-    apellido: "López",
-    cedula: "V-99001122",
-    email: "ana@asic.gob.ve",
-    rol: "personal",
-    activo: false,
-  },
-];
+const API = import.meta.env.VITE_API_URL || "";
 
-const FORM_VACIO = {
+const FORM_VACIO_USUARIO = {
   nombre: "",
   apellido: "",
   cedula: "",
@@ -40,35 +11,57 @@ const FORM_VACIO = {
   password: "",
   confirmar: "",
 };
-const FORM_PWD = { actual: "", nueva: "", confirmar: "" };
 
-// ── Componente principal ────────────────────────────────────
+const FORM_VACIO_EDITAR = {
+  nombre: "",
+  apellido: "",
+  cedula: "",
+  email: "",
+  rol_id: "2",
+  activo: true,
+  password: "",
+  confirmar: "",
+};
+
+const FORM_VACIO_PWD = { actual: "", nueva: "", confirmar: "" };
+
 export default function Perfil() {
   const navigate = useNavigate();
 
   const [usuario, setUsuario] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [usuarios, setUsuarios] = useState(USUARIOS_DEMO);
+
+  // Lista de usuarios del sistema
+  const [usuarios, setUsuarios] = useState([]);
+  const [cargandoUsers, setCargandoUsers] = useState(false);
 
   // Modales
   const [modalNuevo, setModalNuevo] = useState(false);
   const [modalEditar, setModalEditar] = useState(null); // usuario a editar
-  const [modalPwd, setModalPwd] = useState(false);
-  const [modalConfirm, setModalConfirm] = useState(null); // { id, activo }
+  const [modalConfirm, setModalConfirm] = useState(null); // { id, activo, nombre }
 
   // Formularios
-  const [formNuevo, setFormNuevo] = useState(FORM_VACIO);
-  const [formEditar, setFormEditar] = useState(FORM_VACIO);
-  const [formPwd, setFormPwd] = useState(FORM_PWD);
+  const [formNuevo, setFormNuevo] = useState(FORM_VACIO_USUARIO);
+  const [formEditar, setFormEditar] = useState(FORM_VACIO_EDITAR);
+  const [formPwd, setFormPwd] = useState(FORM_VACIO_PWD);
 
-  // Estados
+  // Estados feedback
   const [errorNuevo, setErrorNuevo] = useState("");
-  const [errorEditar, setErrorEditar] = useState("");
-  const [errorPwd, setErrorPwd] = useState("");
   const [okNuevo, setOkNuevo] = useState(false);
-  const [okEditar, setOkEditar] = useState(false);
-  const [okPwd, setOkPwd] = useState(false);
+  const [cargandoNuevo, setCargandoNuevo] = useState(false);
 
+  const [errorEditar, setErrorEditar] = useState("");
+  const [okEditar, setOkEditar] = useState(false);
+  const [cargandoEditar, setCargandoEditar] = useState(false);
+
+  const [errorPwd, setErrorPwd] = useState("");
+  const [okPwd, setOkPwd] = useState(false);
+  const [cargandoPwd, setCargandoPwd] = useState(false);
+
+  const [errorConfirm, setErrorConfirm] = useState("");
+  const [cargandoConf, setCargandoConf] = useState(false);
+
+  // ── Auth guard ────────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem("token");
     const u = localStorage.getItem("usuario");
@@ -87,114 +80,37 @@ export default function Perfil() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
+  const headers = useMemo(
+    () => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    }),
+    [],
+  );
+
   const esAdmin = usuario?.rol === "administrador";
-  const iniciales = usuario?.nombre
-    ? usuario.nombre
-        .split(" ")
-        .map((p) => p[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase()
-    : "??";
 
-  // ── Crear nuevo usuario ─────────────────────────────────
-  function abrirNuevo() {
-    setFormNuevo(FORM_VACIO);
-    setErrorNuevo("");
-    setOkNuevo(false);
-    setModalNuevo(true);
-  }
+  // ── Cargar lista de usuarios ──────────────────────────────
+  const cargarUsuarios = useCallback(async () => {
+    if (!esAdmin) return;
+    setCargandoUsers(true);
+    try {
+      const resp = await fetch(`${API}/api/usuarios`, { headers });
+      const data = await resp.json();
+      if (data.ok) setUsuarios(data.usuarios);
+    } catch (err) {
+      console.error("Error cargando usuarios:", err);
+    } finally {
+      setCargandoUsers(false);
+    }
+  }, [esAdmin, headers]);
 
-  function guardarNuevo(e) {
-    e.preventDefault();
-    setErrorNuevo("");
-    const { nombre, apellido, cedula, email, password, confirmar } = formNuevo;
-    if (!nombre || !apellido || !cedula || !email || !password) {
-      setErrorNuevo("Todos los campos son obligatorios.");
-      return;
-    }
-    if (password.length < 8) {
-      setErrorNuevo("La contraseña debe tener mínimo 8 caracteres.");
-      return;
-    }
-    if (password !== confirmar) {
-      setErrorNuevo("Las contraseñas no coinciden.");
-      return;
-    }
-    if (usuarios.some((u) => u.email === email || u.cedula === cedula)) {
-      setErrorNuevo("Ya existe un usuario con ese email o cédula.");
-      return;
-    }
-    const nuevo = {
-      id: usuarios.length + 2,
-      nombre,
-      apellido,
-      cedula,
-      email,
-      rol: "personal",
-      activo: true,
-    };
-    setUsuarios((prev) => [...prev, nuevo]);
-    setOkNuevo(true);
-    setTimeout(() => {
-      setModalNuevo(false);
-      setOkNuevo(false);
-    }, 1200);
-  }
+  useEffect(() => {
+    cargarUsuarios();
+  }, [cargarUsuarios]);
 
-  // ── Editar usuario ──────────────────────────────────────
-  function abrirEditar(u) {
-    setFormEditar({
-      nombre: u.nombre,
-      apellido: u.apellido,
-      cedula: u.cedula,
-      email: u.email,
-      password: "",
-      confirmar: "",
-    });
-    setErrorEditar("");
-    setOkEditar(false);
-    setModalEditar(u);
-  }
-
-  function guardarEditar(e) {
-    e.preventDefault();
-    setErrorEditar("");
-    const { nombre, apellido, cedula, email, password, confirmar } = formEditar;
-    if (!nombre || !apellido || !cedula || !email) {
-      setErrorEditar("Nombre, apellido, cédula y email son obligatorios.");
-      return;
-    }
-    if (password && password.length < 8) {
-      setErrorEditar("La nueva contraseña debe tener mínimo 8 caracteres.");
-      return;
-    }
-    if (password && password !== confirmar) {
-      setErrorEditar("Las contraseñas no coinciden.");
-      return;
-    }
-    setUsuarios((prev) =>
-      prev.map((u) =>
-        u.id === modalEditar.id ? { ...u, nombre, apellido, cedula, email } : u,
-      ),
-    );
-    setOkEditar(true);
-    setTimeout(() => {
-      setModalEditar(null);
-      setOkEditar(false);
-    }, 1200);
-  }
-
-  // ── Cambiar estado activo/inactivo ──────────────────────
-  function cambiarEstado(id, nuevoEstado) {
-    setUsuarios((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, activo: nuevoEstado } : u)),
-    );
-    setModalConfirm(null);
-  }
-
-  // ── Cambiar contraseña propia ───────────────────────────
-  function guardarPwd(e) {
+  // ── Cambiar contraseña propia ─────────────────────────────
+  async function guardarPwd(e) {
     e.preventDefault();
     setErrorPwd("");
     const { actual, nueva, confirmar } = formPwd;
@@ -210,10 +126,197 @@ export default function Perfil() {
       setErrorPwd("Las contraseñas no coinciden.");
       return;
     }
-    setOkPwd(true);
-    setFormPwd(FORM_PWD);
-    setTimeout(() => setOkPwd(false), 2500);
+
+    setCargandoPwd(true);
+    try {
+      const resp = await fetch(`${API}/api/usuarios/perfil/cambiar-password`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          password_actual: actual,
+          password_nueva: nueva,
+        }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        setOkPwd(true);
+        setFormPwd(FORM_VACIO_PWD);
+        setTimeout(() => setOkPwd(false), 3000);
+      } else {
+        setErrorPwd(data.mensaje || "Error al actualizar la contraseña.");
+      }
+    } catch {
+      setErrorPwd("No se pudo conectar con el servidor.");
+    } finally {
+      setCargandoPwd(false);
+    }
   }
+
+  // ── Crear nuevo usuario ───────────────────────────────────
+  async function guardarNuevo(e) {
+    e.preventDefault();
+    setErrorNuevo("");
+    const { nombre, apellido, cedula, email, password, confirmar } = formNuevo;
+    if (!nombre || !apellido || !cedula || !email || !password) {
+      setErrorNuevo("Todos los campos son obligatorios.");
+      return;
+    }
+    if (password.length < 8) {
+      setErrorNuevo("La contraseña debe tener mínimo 8 caracteres.");
+      return;
+    }
+    if (password !== confirmar) {
+      setErrorNuevo("Las contraseñas no coinciden.");
+      return;
+    }
+
+    setCargandoNuevo(true);
+    try {
+      const resp = await fetch(`${API}/api/usuarios`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          nombre,
+          apellido,
+          cedula,
+          email,
+          password,
+          rol_id: 2,
+        }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        setOkNuevo(true);
+        setTimeout(() => {
+          setModalNuevo(false);
+          setOkNuevo(false);
+          setFormNuevo(FORM_VACIO_USUARIO);
+          cargarUsuarios();
+        }, 1200);
+      } else {
+        setErrorNuevo(data.mensaje || "Error al crear el usuario.");
+      }
+    } catch {
+      setErrorNuevo("No se pudo conectar con el servidor.");
+    } finally {
+      setCargandoNuevo(false);
+    }
+  }
+
+  // ── Abrir modal editar ────────────────────────────────────
+  function abrirEditar(u) {
+    setFormEditar({
+      nombre: u.nombre,
+      apellido: u.apellido,
+      cedula: u.cedula,
+      email: u.email,
+      rol_id: String(u.rol_id),
+      activo: u.activo,
+      password: "",
+      confirmar: "",
+    });
+    setErrorEditar("");
+    setOkEditar(false);
+    setModalEditar(u);
+  }
+
+  // ── Guardar edición de usuario ────────────────────────────
+  async function guardarEditar(e) {
+    e.preventDefault();
+    setErrorEditar("");
+    const {
+      nombre,
+      apellido,
+      cedula,
+      email,
+      rol_id,
+      activo,
+      password,
+      confirmar,
+    } = formEditar;
+    if (!nombre || !apellido || !cedula || !email) {
+      setErrorEditar("Nombre, apellido, cédula y email son obligatorios.");
+      return;
+    }
+    if (password && password.length < 8) {
+      setErrorEditar("La nueva contraseña debe tener mínimo 8 caracteres.");
+      return;
+    }
+    if (password && password !== confirmar) {
+      setErrorEditar("Las contraseñas no coinciden.");
+      return;
+    }
+
+    setCargandoEditar(true);
+    try {
+      const body = {
+        nombre,
+        apellido,
+        cedula,
+        email,
+        rol_id: parseInt(rol_id),
+        activo,
+      };
+      if (password) body.password = password;
+
+      const resp = await fetch(`${API}/api/usuarios/${modalEditar.id}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        setOkEditar(true);
+        setTimeout(() => {
+          setModalEditar(null);
+          setOkEditar(false);
+          cargarUsuarios();
+        }, 1200);
+      } else {
+        setErrorEditar(data.mensaje || "Error al actualizar.");
+      }
+    } catch {
+      setErrorEditar("No se pudo conectar con el servidor.");
+    } finally {
+      setCargandoEditar(false);
+    }
+  }
+
+  // ── Confirmar cambio de estado ────────────────────────────
+  async function confirmarCambioEstado() {
+    setErrorConfirm("");
+    setCargandoConf(true);
+    try {
+      const resp = await fetch(
+        `${API}/api/usuarios/${modalConfirm.id}/estado`,
+        {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ activo: !modalConfirm.activo }),
+        },
+      );
+      const data = await resp.json();
+      if (data.ok) {
+        setModalConfirm(null);
+        cargarUsuarios();
+      } else {
+        setErrorConfirm(data.mensaje || "Error al cambiar el estado.");
+      }
+    } catch {
+      setErrorConfirm("No se pudo conectar con el servidor.");
+    } finally {
+      setCargandoConf(false);
+    }
+  }
+
+  const iniciales = usuario?.nombre
+    ? usuario.nombre
+        .split(" ")
+        .map((p) => p[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "??";
 
   const NAV = [
     { label: "Inicio", ruta: "/dashboard", activo: false },
@@ -225,7 +328,6 @@ export default function Perfil() {
 
   return (
     <div className="min-h-screen flex bg-blue-50">
-      {/* Overlay móvil */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -257,7 +359,6 @@ export default function Perfil() {
             <IcoCerrar />
           </button>
         </div>
-
         <nav className="flex-1 px-3 py-4 space-y-0.5">
           {NAV.map((item) => (
             <button
@@ -268,7 +369,11 @@ export default function Perfil() {
               }}
               className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg
                          text-sm font-medium transition text-left touch-manipulation
-                         ${item.activo ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/10 hover:text-white"}`}
+                         ${
+                           item.activo
+                             ? "bg-white/15 text-white"
+                             : "text-white/55 hover:bg-white/10 hover:text-white"
+                         }`}
             >
               <span className="w-5 h-5 flex-shrink-0">
                 {item.label === "Inicio" && <IcoHome />}
@@ -284,7 +389,6 @@ export default function Perfil() {
             </button>
           ))}
         </nav>
-
         <div className="border-t border-white/10 px-4 py-4">
           <div className="flex items-center gap-3">
             <div
@@ -314,7 +418,6 @@ export default function Perfil() {
 
       {/* ── Contenido ───────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 lg:ml-60">
-        {/* Topbar móvil */}
         <header
           className="lg:hidden sticky top-0 z-10 bg-blue-900
                            border-b border-white/10 px-4 py-3
@@ -336,6 +439,7 @@ export default function Perfil() {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
+          {/* Encabezado */}
           <div className="mb-6">
             <h1 className="text-xl sm:text-2xl font-bold text-blue-900">
               Mi perfil
@@ -351,10 +455,9 @@ export default function Perfil() {
                           flex flex-col sm:flex-row items-start sm:items-center gap-4"
           >
             <div
-              className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-600 rounded-2xl
-                            flex items-center justify-center text-white
-                            font-bold text-2xl sm:text-3xl flex-shrink-0 shadow-lg
-                            shadow-blue-200"
+              className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-600 rounded-2xl flex items-center
+                            justify-center text-white font-bold text-2xl sm:text-3xl
+                            flex-shrink-0 shadow-lg shadow-blue-200"
             >
               {iniciales}
             </div>
@@ -365,24 +468,21 @@ export default function Perfil() {
               <p className="text-sm text-gray-500 mt-0.5">{usuario?.email}</p>
               <div className="flex flex-wrap gap-2 mt-2">
                 <span
-                  className="px-3 py-1 bg-blue-100 text-blue-700
-                                 rounded-full text-xs font-semibold capitalize"
+                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full
+                                 text-xs font-semibold capitalize"
                 >
                   {usuario?.rol === "administrador"
                     ? "Coordinador / Administrador"
                     : "Personal administrativo"}
                 </span>
-                <span
-                  className="px-3 py-1 bg-green-100 text-green-700
-                                 rounded-full text-xs font-semibold"
-                >
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
                   Cuenta activa
                 </span>
               </div>
             </div>
           </div>
 
-          {/* ── Datos personales ─────────────────────────── */}
+          {/* ── Información personal ─────────────────────── */}
           <div className="bg-white rounded-2xl border border-blue-100 p-5 sm:p-6 mb-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-4">
               Información personal
@@ -404,7 +504,7 @@ export default function Perfil() {
                 }
               />
               <Campo
-                label="Estado de cuenta"
+                label="Estado"
                 valor={
                   <span
                     className="px-2.5 py-1 bg-green-100 text-green-700
@@ -424,7 +524,8 @@ export default function Perfil() {
             </h3>
             <form onSubmit={guardarPwd} noValidate>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                <FormField label="Contraseña actual *">
+                <div>
+                  <label className={LBL}>Contraseña actual *</label>
                   <input
                     type="password"
                     value={formPwd.actual}
@@ -432,10 +533,11 @@ export default function Perfil() {
                       setFormPwd((f) => ({ ...f, actual: e.target.value }))
                     }
                     placeholder="••••••••"
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
-                <FormField label="Nueva contraseña *">
+                </div>
+                <div>
+                  <label className={LBL}>Nueva contraseña *</label>
                   <input
                     type="password"
                     value={formPwd.nueva}
@@ -443,10 +545,11 @@ export default function Perfil() {
                       setFormPwd((f) => ({ ...f, nueva: e.target.value }))
                     }
                     placeholder="Mínimo 8 caracteres"
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
-                <FormField label="Confirmar contraseña *">
+                </div>
+                <div>
+                  <label className={LBL}>Confirmar contraseña *</label>
                   <input
                     type="password"
                     value={formPwd.confirmar}
@@ -454,21 +557,27 @@ export default function Perfil() {
                       setFormPwd((f) => ({ ...f, confirmar: e.target.value }))
                     }
                     placeholder="Repetir contraseña"
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
+                </div>
               </div>
-              {errorPwd && <Alerta tipo="error" msg={errorPwd} />}
-              {okPwd && (
-                <Alerta tipo="ok" msg="Contraseña actualizada correctamente." />
-              )}
+              {errorPwd && <MsgError msg={errorPwd} />}
+              {okPwd && <MsgOk msg="Contraseña actualizada correctamente." />}
               <button
                 type="submit"
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold
-                           px-5 py-2.5 rounded-xl text-sm transition active:scale-[0.98]
+                disabled={cargandoPwd}
+                className="mt-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-700
+                           disabled:opacity-50 text-white font-semibold px-5 py-2.5
+                           rounded-xl text-sm transition active:scale-[0.98]
                            touch-manipulation"
               >
-                Actualizar contraseña
+                {cargandoPwd ? (
+                  <>
+                    <Spinner /> Actualizando...
+                  </>
+                ) : (
+                  "Actualizar contraseña"
+                )}
               </button>
             </form>
           </div>
@@ -482,12 +591,18 @@ export default function Perfil() {
                     Usuarios del sistema
                   </h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {usuarios.filter((u) => u.activo).length} activos ·{" "}
-                    {usuarios.length} total
+                    {cargandoUsers
+                      ? "Cargando..."
+                      : `${usuarios.filter((u) => u.activo).length} activos · ${usuarios.length} total`}
                   </p>
                 </div>
                 <button
-                  onClick={abrirNuevo}
+                  onClick={() => {
+                    setFormNuevo(FORM_VACIO_USUARIO);
+                    setErrorNuevo("");
+                    setOkNuevo(false);
+                    setModalNuevo(true);
+                  }}
                   className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700
                              text-white font-semibold px-3 sm:px-4 py-2 sm:py-2.5
                              rounded-xl text-xs sm:text-sm transition active:scale-[0.98]
@@ -506,17 +621,23 @@ export default function Perfil() {
                       d="M12 4v16m8-8H4"
                     />
                   </svg>
-                  <span className="hidden sm:inline">Nuevo usuario</span>
-                  <span className="sm:hidden">Nuevo</span>
+                  Nuevo usuario
                 </button>
               </div>
 
-              {/* Tabla de usuarios */}
+              {/* Tabla usuarios */}
               <div className="overflow-x-auto rounded-xl border border-blue-50">
                 <table className="w-full text-sm">
                   <thead className="bg-blue-50 border-b border-blue-100">
                     <tr>
-                      {["Usuario", "Cédula", "Email", "Estado", ""].map((h) => (
+                      {[
+                        "Usuario",
+                        "Cédula",
+                        "Email",
+                        "Rol",
+                        "Estado",
+                        "Acciones",
+                      ].map((h) => (
                         <th
                           key={h}
                           className="text-left px-4 py-3 text-xs font-semibold
@@ -528,71 +649,109 @@ export default function Perfil() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-blue-50">
-                    {usuarios.map((u) => (
-                      <tr key={u.id} className="hover:bg-blue-50/40 transition">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div
-                              className="w-8 h-8 bg-blue-100 rounded-full flex items-center
-                                            justify-center text-blue-600 font-bold text-xs flex-shrink-0"
-                            >
-                              {u.nombre[0]}
-                              {u.apellido[0]}
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-800 text-sm">
-                                {u.nombre} {u.apellido}
-                              </p>
-                              <p className="text-xs text-gray-400 capitalize">
-                                {u.rol}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                          {u.cedula}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                          {u.email}
-                        </td>
-                        <td className="px-4 py-3">
+                    {cargandoUsers ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center">
                           <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-semibold
+                            className="inline-block w-6 h-6 border-2 border-blue-300
+                                         border-t-blue-600 rounded-full animate-spin"
+                          />
+                        </td>
+                      </tr>
+                    ) : usuarios.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="px-4 py-8 text-center text-gray-400 text-sm"
+                        >
+                          No hay usuarios registrados.
+                        </td>
+                      </tr>
+                    ) : (
+                      usuarios.map((u) => (
+                        <tr
+                          key={u.id}
+                          className="hover:bg-blue-50/40 transition"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <div
+                                className="w-8 h-8 bg-blue-100 rounded-full flex items-center
+                                            justify-center text-blue-600 font-bold text-xs flex-shrink-0"
+                              >
+                                {u.nombre[0]}
+                                {u.apellido[0]}
+                              </div>
+                              <div>
+                                <p className="font-medium text-gray-800 text-sm">
+                                  {u.nombre} {u.apellido}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                            {u.cedula}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                            {u.email}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold
+                            ${
+                              u.rol === "administrador"
+                                ? "bg-purple-100 text-purple-700"
+                                : "bg-blue-100 text-blue-700"
+                            }`}
+                            >
+                              {u.rol}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold
                             ${
                               u.activo
                                 ? "bg-green-100 text-green-700"
                                 : "bg-red-100 text-red-700"
                             }`}
-                          >
-                            {u.activo ? "Activo" : "Inactivo"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => abrirEditar(u)}
-                              className="text-blue-600 hover:text-blue-800 text-xs
+                            >
+                              {u.activo ? "Activo" : "Inactivo"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => abrirEditar(u)}
+                                className="text-blue-600 hover:text-blue-800 text-xs
                                          font-medium hover:underline transition"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() =>
-                                setModalConfirm({
-                                  id: u.id,
-                                  activo: u.activo,
-                                  nombre: `${u.nombre} ${u.apellido}`,
-                                })
-                              }
-                              className={`text-xs font-medium hover:underline transition
-                                ${u.activo ? "text-red-500 hover:text-red-700" : "text-green-600 hover:text-green-800"}`}
-                            >
-                              {u.activo ? "Desactivar" : "Activar"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              >
+                                Editar
+                              </button>
+                              {u.id !== usuario?.id && (
+                                <button
+                                  onClick={() =>
+                                    setModalConfirm({
+                                      id: u.id,
+                                      activo: u.activo,
+                                      nombre: `${u.nombre} ${u.apellido}`,
+                                    })
+                                  }
+                                  className={`text-xs font-medium hover:underline transition
+                                  ${
+                                    u.activo
+                                      ? "text-red-500 hover:text-red-700"
+                                      : "text-green-600 hover:text-green-800"
+                                  }`}
+                                >
+                                  {u.activo ? "Desactivar" : "Activar"}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -604,13 +763,14 @@ export default function Perfil() {
       {/* ══ MODAL: Nuevo usuario ══════════════════════════ */}
       {modalNuevo && (
         <Modal
-          titulo="Crear cuenta de personal"
+          titulo="Crear nuevo usuario"
           onClose={() => setModalNuevo(false)}
         >
           <form onSubmit={guardarNuevo} noValidate>
             <div className="px-6 py-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField label="Nombre *">
+                <div>
+                  <label className={LBL}>Nombre *</label>
                   <input
                     type="text"
                     value={formNuevo.nombre}
@@ -618,10 +778,11 @@ export default function Perfil() {
                       setFormNuevo((f) => ({ ...f, nombre: e.target.value }))
                     }
                     placeholder="Nombre"
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
-                <FormField label="Apellido *">
+                </div>
+                <div>
+                  <label className={LBL}>Apellido *</label>
                   <input
                     type="text"
                     value={formNuevo.apellido}
@@ -629,11 +790,12 @@ export default function Perfil() {
                       setFormNuevo((f) => ({ ...f, apellido: e.target.value }))
                     }
                     placeholder="Apellido"
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
+                </div>
               </div>
-              <FormField label="Cédula *">
+              <div>
+                <label className={LBL}>Cédula *</label>
                 <input
                   type="text"
                   value={formNuevo.cedula}
@@ -641,10 +803,11 @@ export default function Perfil() {
                     setFormNuevo((f) => ({ ...f, cedula: e.target.value }))
                   }
                   placeholder="V-12345678"
-                  className={inputCls}
+                  className={INP}
                 />
-              </FormField>
-              <FormField label="Correo electrónico *">
+              </div>
+              <div>
+                <label className={LBL}>Correo electrónico *</label>
                 <input
                   type="email"
                   value={formNuevo.email}
@@ -652,11 +815,12 @@ export default function Perfil() {
                     setFormNuevo((f) => ({ ...f, email: e.target.value }))
                   }
                   placeholder="usuario@asic.gob.ve"
-                  className={inputCls}
+                  className={INP}
                 />
-              </FormField>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField label="Contraseña inicial *">
+                <div>
+                  <label className={LBL}>Contraseña inicial *</label>
                   <input
                     type="password"
                     value={formNuevo.password}
@@ -664,10 +828,11 @@ export default function Perfil() {
                       setFormNuevo((f) => ({ ...f, password: e.target.value }))
                     }
                     placeholder="Mínimo 8 caracteres"
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
-                <FormField label="Confirmar contraseña *">
+                </div>
+                <div>
+                  <label className={LBL}>Confirmar contraseña *</label>
                   <input
                     type="password"
                     value={formNuevo.confirmar}
@@ -675,21 +840,31 @@ export default function Perfil() {
                       setFormNuevo((f) => ({ ...f, confirmar: e.target.value }))
                     }
                     placeholder="Repetir contraseña"
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
+                </div>
               </div>
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                <p className="text-xs text-blue-700">
+                <p className="text-xs text-blue-700 flex items-start gap-2">
+                  <svg
+                    className="w-4 h-4 flex-shrink-0 mt-0.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
                   La cuenta se creará con rol de{" "}
-                  <strong>Personal administrativo</strong>. El usuario podrá
-                  cambiar su contraseña al ingresar.
+                  <strong>Personal administrativo</strong>.
                 </p>
               </div>
-              {errorNuevo && <Alerta tipo="error" msg={errorNuevo} />}
-              {okNuevo && (
-                <Alerta tipo="ok" msg="Usuario creado correctamente." />
-              )}
+              {errorNuevo && <MsgError msg={errorNuevo} />}
+              {okNuevo && <MsgOk msg="Usuario creado correctamente." />}
             </div>
             <div className="flex gap-3 px-6 pb-6">
               <button
@@ -702,11 +877,19 @@ export default function Perfil() {
               </button>
               <button
                 type="submit"
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white
-                           font-semibold py-2.5 rounded-xl text-sm transition
-                           active:scale-[0.98]"
+                disabled={cargandoNuevo}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
+                           text-white font-semibold py-2.5 rounded-xl text-sm
+                           transition active:scale-[0.98] flex items-center
+                           justify-center gap-2"
               >
-                Crear cuenta
+                {cargandoNuevo ? (
+                  <>
+                    <Spinner /> Guardando...
+                  </>
+                ) : (
+                  "Crear usuario"
+                )}
               </button>
             </div>
           </form>
@@ -722,60 +905,98 @@ export default function Perfil() {
           <form onSubmit={guardarEditar} noValidate>
             <div className="px-6 py-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField label="Nombre *">
+                <div>
+                  <label className={LBL}>Nombre *</label>
                   <input
                     type="text"
                     value={formEditar.nombre}
                     onChange={(e) =>
                       setFormEditar((f) => ({ ...f, nombre: e.target.value }))
                     }
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
-                <FormField label="Apellido *">
+                </div>
+                <div>
+                  <label className={LBL}>Apellido *</label>
                   <input
                     type="text"
                     value={formEditar.apellido}
                     onChange={(e) =>
                       setFormEditar((f) => ({ ...f, apellido: e.target.value }))
                     }
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
+                </div>
               </div>
-              <FormField label="Cédula *">
+              <div>
+                <label className={LBL}>Cédula *</label>
                 <input
                   type="text"
                   value={formEditar.cedula}
                   onChange={(e) =>
                     setFormEditar((f) => ({ ...f, cedula: e.target.value }))
                   }
-                  className={inputCls}
+                  className={INP}
                 />
-              </FormField>
-              <FormField label="Correo electrónico *">
+              </div>
+              <div>
+                <label className={LBL}>Correo electrónico *</label>
                 <input
                   type="email"
                   value={formEditar.email}
                   onChange={(e) =>
                     setFormEditar((f) => ({ ...f, email: e.target.value }))
                   }
-                  className={inputCls}
+                  className={INP}
                 />
-              </FormField>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField label="Nueva contraseña (opcional)">
+                <div>
+                  <label className={LBL}>Rol</label>
+                  <select
+                    value={formEditar.rol_id}
+                    onChange={(e) =>
+                      setFormEditar((f) => ({ ...f, rol_id: e.target.value }))
+                    }
+                    className={INP}
+                  >
+                    <option value="2">Personal administrativo</option>
+                    <option value="1">Administrador</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={LBL}>Estado</label>
+                  <select
+                    value={formEditar.activo ? "true" : "false"}
+                    onChange={(e) =>
+                      setFormEditar((f) => ({
+                        ...f,
+                        activo: e.target.value === "true",
+                      }))
+                    }
+                    disabled={modalEditar.id === usuario?.id}
+                    className={`${INP} disabled:opacity-50`}
+                  >
+                    <option value="true">Activo</option>
+                    <option value="false">Inactivo</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={LBL}>Nueva contraseña</label>
                   <input
                     type="password"
                     value={formEditar.password}
                     onChange={(e) =>
                       setFormEditar((f) => ({ ...f, password: e.target.value }))
                     }
-                    placeholder="Dejar en blanco para no cambiar"
-                    className={inputCls}
+                    placeholder="Dejar vacío para no cambiar"
+                    className={INP}
                   />
-                </FormField>
-                <FormField label="Confirmar contraseña">
+                </div>
+                <div>
+                  <label className={LBL}>Confirmar</label>
                   <input
                     type="password"
                     value={formEditar.confirmar}
@@ -786,14 +1007,12 @@ export default function Perfil() {
                       }))
                     }
                     placeholder="Repetir si cambió"
-                    className={inputCls}
+                    className={INP}
                   />
-                </FormField>
+                </div>
               </div>
-              {errorEditar && <Alerta tipo="error" msg={errorEditar} />}
-              {okEditar && (
-                <Alerta tipo="ok" msg="Usuario actualizado correctamente." />
-              )}
+              {errorEditar && <MsgError msg={errorEditar} />}
+              {okEditar && <MsgOk msg="Usuario actualizado correctamente." />}
             </div>
             <div className="flex gap-3 px-6 pb-6">
               <button
@@ -806,23 +1025,28 @@ export default function Perfil() {
               </button>
               <button
                 type="submit"
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white
-                           font-semibold py-2.5 rounded-xl text-sm transition
-                           active:scale-[0.98]"
+                disabled={cargandoEditar}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
+                           text-white font-semibold py-2.5 rounded-xl text-sm
+                           transition active:scale-[0.98] flex items-center
+                           justify-center gap-2"
               >
-                Guardar cambios
+                {cargandoEditar ? (
+                  <>
+                    <Spinner /> Guardando...
+                  </>
+                ) : (
+                  "Guardar cambios"
+                )}
               </button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* ══ MODAL: Confirmar activar/desactivar ══════════ */}
+      {/* ══ MODAL: Confirmar cambio de estado ════════════ */}
       {modalConfirm && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center
-                        z-50 p-4"
-        >
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div
               className={`w-12 h-12 rounded-full flex items-center justify-center
@@ -839,40 +1063,51 @@ export default function Perfil() {
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94
+                     a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
                 />
               </svg>
             </div>
             <h3 className="font-semibold text-gray-800 mb-2">
               ¿{modalConfirm.activo ? "Desactivar" : "Activar"} usuario?
             </h3>
-            <p className="text-sm text-gray-500 mb-5">
+            <p className="text-sm text-gray-500 mb-2">
               <span className="font-medium">{modalConfirm.nombre}</span>
               {modalConfirm.activo
                 ? " perderá acceso al sistema."
                 : " recuperará acceso al sistema."}
             </p>
-            <div className="flex gap-3">
+            {errorConfirm && <MsgError msg={errorConfirm} />}
+            <div className="flex gap-3 mt-4">
               <button
-                onClick={() => setModalConfirm(null)}
+                onClick={() => {
+                  setModalConfirm(null);
+                  setErrorConfirm("");
+                }}
                 className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm
                            text-gray-600 hover:bg-gray-50 transition"
               >
                 Cancelar
               </button>
               <button
-                onClick={() =>
-                  cambiarEstado(modalConfirm.id, !modalConfirm.activo)
-                }
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold
-                           text-white transition active:scale-[0.98]
+                onClick={confirmarCambioEstado}
+                disabled={cargandoConf}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white
+                           transition active:scale-[0.98] flex items-center
+                           justify-center gap-2 disabled:opacity-50
                            ${
                              modalConfirm.activo
                                ? "bg-red-500 hover:bg-red-600"
                                : "bg-green-500 hover:bg-green-600"
                            }`}
               >
-                Confirmar
+                {cargandoConf ? (
+                  <>
+                    <Spinner /> Procesando...
+                  </>
+                ) : (
+                  "Confirmar"
+                )}
               </button>
             </div>
           </div>
@@ -882,12 +1117,11 @@ export default function Perfil() {
   );
 }
 
-// ── Componentes reutilizables ───────────────────────────────
+// ── Componentes helper ──────────────────────────────────────
 function Modal({ titulo, onClose, children }) {
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center
-                    z-50 p-4"
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -925,64 +1159,65 @@ function Campo({ label, valor }) {
   );
 }
 
-function FormField({ label, children }) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function Alerta({ tipo, msg }) {
+function MsgError({ msg }) {
   return (
     <div
-      className={`px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2
-      ${
-        tipo === "ok"
-          ? "bg-green-50 border border-green-200 text-green-700"
-          : "bg-red-50 border border-red-200 text-red-600"
-      }`}
+      className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl
+                    text-sm text-red-600 flex items-start gap-2"
     >
-      {tipo === "ok" ? (
-        <svg
-          className="w-4 h-4 flex-shrink-0"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2.5}
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M5 13l4 4L19 7"
-          />
-        </svg>
-      ) : (
-        <svg
-          className="w-4 h-4 flex-shrink-0"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-          />
-        </svg>
-      )}
+      <svg
+        className="w-4 h-4 flex-shrink-0 mt-0.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94
+             a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+        />
+      </svg>
       {msg}
     </div>
   );
 }
 
-const inputCls = `w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm
+function MsgOk({ msg }) {
+  return (
+    <div
+      className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl
+                    text-sm text-green-700 font-medium flex items-center gap-2"
+    >
+      <svg
+        className="w-4 h-4 flex-shrink-0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.5}
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+      </svg>
+      {msg}
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <span
+      className="w-4 h-4 border-2 border-white/30 border-t-white
+                     rounded-full animate-spin inline-block"
+    />
+  );
+}
+
+const INP = `w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm
   focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent
   transition text-gray-700 bg-white`;
+
+const LBL = "block text-xs font-semibold text-gray-700 mb-1.5";
 
 // ── Iconos ──────────────────────────────────────────────────
 function IcoJeringa({ className }) {
