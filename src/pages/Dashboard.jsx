@@ -1,125 +1,45 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import logoAsic from "/logo-t.png";
-const STATS = [
-  {
-    label: "Vacunas del mes",
-    valor: "1,248",
-    color: "blue",
-    icono: <IcoVacuna />,
-  },
-  {
-    label: "Pacientes registrados",
-    valor: "3,540",
-    color: "blue",
-    icono: <IcoPacientes />,
-  },
-  {
-    label: "Stock disponible",
-    valor: "4,820",
-    color: "blue",
-    icono: <IcoStock />,
-  },
-  { label: "Stock crítico", valor: "3", color: "amber", icono: <IcoAlerta /> },
-  {
-    label: "Tipos de vacuna",
-    valor: "8",
-    color: "blue",
-    icono: <IcoReportes />,
-  },
-];
-const MODULOS = [
-  {
-    titulo: "Vacunas aplicadas",
-    desc: "Registra y consulta las dosis aplicadas a cada paciente. Historial completo con lote, fecha y tipo de vacuna.",
-    ruta: "/vacunas",
-    icBg: "bg-blue-100",
-    icColor: "text-blue-600",
-    badge: null,
-    icono: <IcoVacuna />,
-  },
-  {
-    titulo: "Inventario",
-    desc: "Controla el stock de biológicos disponibles. Alertas automáticas cuando el stock baja del mínimo.",
-    ruta: "/inventario",
-    icBg: "bg-blue-100",
-    icColor: "text-blue-600",
-    badge: { texto: "2 alertas", color: "bg-amber-100 text-amber-700" },
-    icono: <IcoStock />,
-  },
-  {
-    titulo: "Reportes",
-    desc: "Genera estadísticas de cobertura y vacunación por período. Exporta en PDF o Excel.",
-    ruta: "/reportes",
-    icBg: "bg-blue-100",
-    icColor: "text-blue-600",
-    badge: null,
-    icono: <IcoReportes />,
-  },
-];
 
-const ACTIVIDAD = [
-  {
-    texto: "BCG aplicada · Paciente V-12345678",
-    tiempo: "hace 5 min",
-    color: "bg-blue-500",
-  },
-  {
-    texto: "Pentavalente (dosis 2) · Paciente V-87654321",
-    tiempo: "hace 18 min",
-    color: "bg-blue-500",
-  },
-  {
-    texto: "Alerta: stock crítico · Fiebre Amarilla",
-    tiempo: "hace 1h",
-    color: "bg-amber-400",
-  },
-  {
-    texto: "Polio Oral registrada · Paciente V-11223344",
-    tiempo: "hace 2h",
-    color: "bg-blue-400",
-  },
-  {
-    texto: "Toxoide aplicado · Paciente V-55667788",
-    tiempo: "hace 3h",
-    color: "bg-blue-300",
-  },
-];
+const API = import.meta.env.VITE_API_URL || "";
 
-const COBERTURA = [
-  { nombre: "BCG", pct: 88, color: "bg-blue-700" },
-  { nombre: "Polio Inyectable (IPV)", pct: 76, color: "bg-blue-600" },
-  { nombre: "Polio Oral", pct: 82, color: "bg-blue-500" },
-  { nombre: "Pentavalente", pct: 91, color: "bg-blue-400" },
-  { nombre: "Hepatitis B", pct: 65, color: "bg-blue-400" },
-  { nombre: "SRP", pct: 79, color: "bg-blue-300" },
-  { nombre: "Fiebre Amarilla", pct: 58, color: "bg-blue-300" },
-  { nombre: "Toxoide", pct: 72, color: "bg-blue-200" },
-];
+// Color por tipo de actividad
+const COLOR_DOT = {
+  green: "bg-green-500",
+  blue: "bg-blue-500",
+  red: "bg-red-400",
+};
 
-const NAV = [
-  { label: "Inicio", ruta: "/dashboard", activo: true, icono: <IcoHome /> },
-  { label: "Vacunas", ruta: "/vacunas", activo: false, icono: <IcoVacuna /> },
-  {
-    label: "Inventario",
-    ruta: "/inventario",
-    activo: false,
-    icono: <IcoStock />,
-  },
-  {
-    label: "Reportes",
-    ruta: "/reportes",
-    activo: false,
-    icono: <IcoReportes />,
-  },
-  { label: "Perfil", ruta: "/perfil", activo: false, icono: <IcoUser /> },
+// Colores de barra por posición en ranking de cobertura
+const COLORES_BARRA = [
+  "bg-blue-700",
+  "bg-blue-600",
+  "bg-blue-500",
+  "bg-blue-400",
+  "bg-blue-300",
+  "bg-blue-200",
+  "bg-blue-100",
+  "bg-sky-300",
 ];
 
 export default function Dashboard() {
   const navigate = useNavigate();
+
   const [usuario, setUsuario] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [datos, setDatos] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
 
+  const headers = useMemo(
+    () => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    }),
+    [],
+  );
+
+  // ── Auth guard ────────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem("token");
     const u = localStorage.getItem("usuario");
@@ -138,6 +58,32 @@ export default function Dashboard() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
+  // ── Cargar datos del dashboard ────────────────────────────
+  useEffect(() => {
+    async function cargar() {
+      setCargando(true);
+      setError("");
+      try {
+        const resp = await fetch(`${API}/api/dashboard`, { headers });
+        const data = await resp.json();
+        if (data.ok) {
+          setDatos(data);
+        } else {
+          setError(data.mensaje || "Error al cargar los datos.");
+        }
+      } catch (err) {
+        console.error(err);
+        setError("No se pudo conectar con el servidor.");
+      } finally {
+        setCargando(false);
+      }
+    }
+    cargar();
+    // Refrescar cada 2 minutos
+    const intervalo = setInterval(cargar, 120000);
+    return () => clearInterval(intervalo);
+  }, [headers]);
+
   const iniciales = usuario?.nombre
     ? usuario.nombre
         .split(" ")
@@ -154,18 +100,94 @@ export default function Dashboard() {
     day: "numeric",
   });
 
-  function irA(ruta) {
-    setSidebarOpen(false);
-    navigate(ruta);
-  }
-  function cerrarSesion() {
-    localStorage.clear();
-    navigate("/login");
-  }
+  const esAdmin = usuario?.rol === "administrador";
+
+  const STATS = datos
+    ? [
+        {
+          label: "Vacunas del mes",
+          valor: datos.stats.vacunas_mes.toLocaleString(),
+          color: "blue",
+          icono: <IcoVacuna />,
+          ruta: "/vacunas",
+        },
+        {
+          label: "Vacunas hoy",
+          valor: datos.stats.vacunas_hoy.toLocaleString(),
+          color: "blue",
+          icono: <IcoHoy />,
+          ruta: "/vacunas",
+        },
+        {
+          label: "Pacientes registrados",
+          valor: datos.stats.pacientes.toLocaleString(),
+          color: "blue",
+          icono: <IcoPacientes />,
+          ruta: "/vacunas",
+        },
+        {
+          label: "Stock crítico",
+          valor: datos.stats.stock_critico.toLocaleString(),
+          color: datos.stats.stock_critico > 0 ? "amber" : "green",
+          icono: <IcoAlerta />,
+          ruta: "/inventario",
+        },
+        {
+          label: "Movimientos del mes",
+          valor: datos.stats.reportes_mes.toLocaleString(),
+          color: "blue",
+          icono: <IcoReportes />,
+          ruta: "/inventario",
+        },
+      ]
+    : [];
+
+  const NAV = [
+    { label: "Inicio", ruta: "/dashboard", activo: true },
+    { label: "Vacunas", ruta: "/vacunas", activo: false },
+    { label: "Inventario", ruta: "/inventario", activo: false },
+    { label: "Reportes", ruta: "/reportes", activo: false },
+    { label: "Perfil", ruta: "/perfil", activo: false },
+  ];
+
+  const MODULOS = [
+    {
+      titulo: "Vacunas aplicadas",
+      desc: "Registra y consulta las dosis aplicadas. Historial completo por paciente.",
+      ruta: "/vacunas",
+      icBg: "bg-blue-100",
+      icColor: "text-blue-600",
+      badge: null,
+      icono: <IcoVacuna />,
+    },
+    {
+      titulo: "Inventario",
+      desc: "Controla el stock de biológicos. Alertas cuando el stock baja del mínimo.",
+      ruta: "/inventario",
+      icBg: "bg-blue-100",
+      icColor: "text-blue-600",
+      badge:
+        datos?.stats.stock_critico > 0
+          ? {
+              texto: `${datos.stats.stock_critico} alertas`,
+              color: "bg-amber-100 text-amber-700",
+            }
+          : null,
+      icono: <IcoStock />,
+    },
+    {
+      titulo: "Reportes",
+      desc: "Estadísticas de cobertura y vacunación. Exporta en PDF o Excel.",
+      ruta: "/reportes",
+      icBg: "bg-blue-100",
+      icColor: "text-blue-600",
+      badge: null,
+      icono: <IcoReportes />,
+    },
+  ];
 
   return (
     <div className="min-h-screen flex bg-blue-50">
-      {/* Overlay móvil */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -180,51 +202,31 @@ export default function Dashboard() {
                         ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
                         lg:translate-x-0 lg:w-60`}
       >
-        {/* Logo */}
-        <div
-          className="flex items-center justify-between px-4 py-5
-                        border-b border-white/10"
-        >
+        <div className="flex items-center justify-between px-4 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 bg-white rounded-lg flex items-center
-                            justify-center flex-shrink-0 shadow"
-            >
+            <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shadow">
               <IcoJeringa className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-white text-sm font-semibold leading-tight">
-                Vacunación
-              </p>
+              <p className="text-white text-sm font-semibold">Vacunación</p>
               <p className="text-blue-300 text-xs">ASIC Dr. Tulio Pineda</p>
             </div>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden text-white/50 hover:text-white p-1 transition"
+            className="lg:hidden text-white/50 hover:text-white p-1"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <IcoCerrar />
           </button>
         </div>
-
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
           {NAV.map((item) => (
             <button
               key={item.label}
-              onClick={() => irA(item.ruta)}
+              onClick={() => {
+                setSidebarOpen(false);
+                navigate(item.ruta);
+              }}
               className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg
                          text-sm font-medium transition text-left touch-manipulation
                          ${
@@ -233,7 +235,13 @@ export default function Dashboard() {
                              : "text-white/55 hover:bg-white/10 hover:text-white"
                          }`}
             >
-              <span className="w-5 h-5 flex-shrink-0">{item.icono}</span>
+              <span className="w-5 h-5 flex-shrink-0">
+                {item.label === "Inicio" && <IcoHome />}
+                {item.label === "Vacunas" && <IcoVacuna />}
+                {item.label === "Inventario" && <IcoStock />}
+                {item.label === "Reportes" && <IcoReportes />}
+                {item.label === "Perfil" && <IcoPerfil />}
+              </span>
               {item.label}
               {item.activo && (
                 <span className="ml-auto w-1.5 h-1.5 bg-blue-300 rounded-full" />
@@ -241,8 +249,6 @@ export default function Dashboard() {
             </button>
           ))}
         </nav>
-
-        {/* Usuario */}
         <div className="border-t border-white/10 px-4 py-4">
           <div className="flex items-center gap-3">
             <div
@@ -253,31 +259,18 @@ export default function Dashboard() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-white text-sm font-medium truncate">
-                {usuario?.nombre || "Cargando..."}
+                {usuario?.nombre}
               </p>
-              <p className="text-blue-300 text-xs capitalize">
-                {usuario?.rol || "—"}
-              </p>
+              <p className="text-blue-300 text-xs capitalize">{usuario?.rol}</p>
             </div>
             <button
-              onClick={cerrarSesion}
-              title="Cerrar sesión"
-              className="text-white/40 hover:text-blue-300 transition flex-shrink-0 p-1"
+              onClick={() => {
+                localStorage.clear();
+                navigate("/login");
+              }}
+              className="text-white/40 hover:text-blue-300 transition p-1 flex-shrink-0"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3
-                     0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                />
-              </svg>
+              <IcoSalir />
             </button>
           </div>
         </div>
@@ -295,42 +288,11 @@ export default function Dashboard() {
             onClick={() => setSidebarOpen(true)}
             className="text-white p-1 touch-manipulation"
           >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 6h16M4 12h16M4 18h16"
-              />
-            </svg>
+            <IcoMenu />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-white rounded-lg flex items-center justify-center">
-              <svg
-                className="w-4 h-4 text-blue-600"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0
-                     00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0
-                     00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5
-                     c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782
-                     0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
-                />
-              </svg>
-            </div>
-            <span className="text-white text-sm font-semibold">Vacunación</span>
-          </div>
+          <span className="text-white text-sm font-semibold">
+            Panel de control
+          </span>
           <div
             className="w-9 h-9 bg-white rounded-full flex items-center
                           justify-center text-blue-600 font-bold text-xs"
@@ -339,7 +301,6 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Página */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
           {/* Encabezado */}
           <div
@@ -350,107 +311,305 @@ export default function Dashboard() {
               <h1 className="text-xl sm:text-2xl font-bold text-blue-900">
                 Panel de control
               </h1>
-              <p className="text-xs sm:text-sm text-blue-600 mt-0.5 capitalize">
+              <p className="text-xs sm:text-sm text-blue-500 mt-0.5 capitalize">
                 Bienvenido,{" "}
-                <span className="font-semibold">
+                <span className="font-semibold text-blue-700">
                   {usuario?.nombre || "..."}
                 </span>
                 <span className="hidden sm:inline"> · {fecha}</span>
               </p>
             </div>
+
+            {/* Badge alerta crítica */}
+            {datos?.stats.stock_critico > 0 && (
+              <button
+                onClick={() => navigate("/inventario")}
+                className="flex items-center gap-2 bg-amber-50 border border-amber-200
+                           hover:bg-amber-100 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5
+                           self-start transition"
+              >
+                <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse flex-shrink-0" />
+                <span className="text-amber-700 text-xs sm:text-sm font-medium whitespace-nowrap">
+                  {datos.stats.stock_critico} alerta
+                  {datos.stats.stock_critico > 1 ? "s" : ""} de stock
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* ── Error ─────────────────────────────────────── */}
+          {error && (
             <div
-              className="flex items-center gap-2 bg-amber-50 border border-amber-200
-                            rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 self-start"
+              className="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-2xl
+                            text-sm text-red-600 flex items-center gap-2"
             >
-              <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse flex-shrink-0" />
-              <span className="text-amber-700 text-xs sm:text-sm font-medium whitespace-nowrap">
-                2 alertas de stock
-              </span>
+              <IcoAlerta className="w-4 h-4 flex-shrink-0" />
+              {error}
+              <button
+                onClick={() => window.location.reload()}
+                className="ml-auto text-red-600 underline text-xs"
+              >
+                Reintentar
+              </button>
             </div>
+          )}
+
+          {/* ── Tarjetas de estadísticas ───────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 mb-7">
+            {cargando
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="bg-white border border-blue-100 rounded-2xl
+                                        p-3 sm:p-4 animate-pulse"
+                  >
+                    <div className="w-9 h-9 bg-blue-100 rounded-xl mb-3" />
+                    <div className="h-7 bg-blue-100 rounded mb-1 w-16" />
+                    <div className="h-3 bg-blue-50 rounded w-24" />
+                  </div>
+                ))
+              : STATS.map((s) => (
+                  <button
+                    key={s.label}
+                    onClick={() => navigate(s.ruta)}
+                    className="text-left hover:scale-[1.02] transition-transform active:scale-[0.98]
+                           touch-manipulation"
+                  >
+                    <StatCard {...s} />
+                  </button>
+                ))}
           </div>
 
-          {/* Stats — 2 col móvil, 3 tablet, 5 desktop */}
-          <div
-            className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5
-                          gap-3 sm:gap-4 mb-6 sm:mb-8"
-          >
-            {STATS.map((s) => (
-              <StatCard key={s.label} {...s} />
-            ))}
-          </div>
-
-          {/* Módulos */}
+          {/* ── Módulos del sistema ───────────────────────── */}
           <h2
-            className="text-xs sm:text-sm font-semibold text-blue-800/60
-                         uppercase tracking-wider mb-3 sm:mb-4"
+            className="text-xs sm:text-sm font-semibold text-blue-400 uppercase
+                         tracking-wider mb-3 sm:mb-4"
           >
             Módulos del sistema
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5 mb-6 sm:mb-8">
-            {MODULOS.map((m) => (
-              <ModCard key={m.titulo} mod={m} onClick={() => irA(m.ruta)} />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5 mb-7">
+            {MODULOS.map((mod) => (
+              <ModCard
+                key={mod.titulo}
+                mod={mod}
+                onClick={() => navigate(mod.ruta)}
+              />
             ))}
           </div>
 
-          {/* Actividad + Cobertura */}
+          {/* ── Actividad reciente + Cobertura ───────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+            {/* Actividad reciente */}
             <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">
-                Actividad reciente
-              </h3>
-              {ACTIVIDAD.map((a, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-3 py-3
-                                        border-b border-blue-50 last:border-0"
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${a.color}`}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm text-gray-700 leading-snug">
-                      {a.texto}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">{a.tiempo}</p>
-                  </div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-700">
+                  Actividad reciente
+                </h3>
+                {!cargando && datos?.actividad?.length === 0 && (
+                  <span className="text-xs text-gray-400">Sin actividad</span>
+                )}
+              </div>
+
+              {cargando ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-3 py-2 animate-pulse"
+                    >
+                      <div className="w-2 h-2 bg-blue-100 rounded-full mt-2 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="h-3 bg-blue-50 rounded w-full mb-1" />
+                        <div className="h-2 bg-blue-50 rounded w-20" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : datos?.actividad?.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400 text-sm">
+                    No hay actividad registrada aún.
+                  </p>
+                  <button
+                    onClick={() => navigate("/vacunas")}
+                    className="mt-3 text-blue-600 text-xs font-medium hover:underline"
+                  >
+                    Registrar primera vacuna →
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  {datos.actividad.map((a, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-3 py-3 border-b border-blue-50 last:border-0"
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0
+                                       ${COLOR_DOT[a.color] || "bg-gray-300"}`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs sm:text-sm text-gray-700 leading-snug">
+                          {a.texto}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {a.tiempo}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
+            {/* Cobertura por vacuna */}
             <div className="bg-white rounded-2xl border border-blue-100 p-4 sm:p-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">
-                Cobertura por vacuna
-              </h3>
-              <div className="space-y-3 sm:space-y-4">
-                {COBERTURA.map((c) => (
-                  <div key={c.nombre}>
-                    <div className="flex justify-between text-xs sm:text-sm mb-1.5">
-                      <span className="text-gray-700 font-medium">
-                        {c.nombre}
-                      </span>
-                      <span className="text-gray-500">{c.pct}%</span>
-                    </div>
-                    <div className="h-2 bg-blue-50 rounded-full">
-                      <div
-                        className={`h-2 ${c.color} rounded-full transition-all duration-700`}
-                        style={{ width: `${c.pct}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-700">
+                  Cobertura por vacuna
+                </h3>
+                <span className="text-xs text-gray-400">Total acumulado</span>
               </div>
-              <p className="text-xs text-gray-400 mt-4 sm:mt-5">
-                * Datos de demostración
-              </p>
+
+              {cargando ? (
+                <div className="space-y-4">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="animate-pulse">
+                      <div className="flex justify-between mb-1">
+                        <div className="h-3 bg-blue-50 rounded w-24" />
+                        <div className="h-3 bg-blue-50 rounded w-10" />
+                      </div>
+                      <div className="h-2 bg-blue-50 rounded-full" />
+                    </div>
+                  ))}
+                </div>
+              ) : datos?.cobertura?.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400 text-sm">
+                    Sin datos de vacunación aún.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 sm:space-y-4">
+                  {datos.cobertura.slice(0, 8).map((c, i) => (
+                    <div key={c.vacuna}>
+                      <div className="flex justify-between text-xs sm:text-sm mb-1.5">
+                        <span className="text-gray-700 font-medium truncate pr-2">
+                          {c.vacuna}
+                        </span>
+                        <span className="text-gray-500 flex-shrink-0">
+                          {c.total} dosis · {c.pct}%
+                        </span>
+                      </div>
+                      <div className="h-2 bg-blue-50 rounded-full">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-700
+                                     ${COLORES_BARRA[i] || "bg-blue-200"}`}
+                          style={{
+                            width: `${Math.max(c.pct, c.total > 0 ? 3 : 0)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!cargando && datos?.cobertura?.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-blue-50 flex items-center justify-between">
+                  <p className="text-xs text-gray-400">
+                    Total:{" "}
+                    <span className="font-semibold text-gray-600">
+                      {datos.cobertura
+                        .reduce((a, c) => a + c.total, 0)
+                        .toLocaleString()}{" "}
+                      dosis aplicadas
+                    </span>
+                  </p>
+                  <button
+                    onClick={() => navigate("/reportes")}
+                    className="text-xs text-blue-600 font-medium hover:underline transition"
+                  >
+                    Ver reportes →
+                  </button>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* ── Accesos rápidos (solo admin) ──────────────── */}
+          {esAdmin && (
+            <div className="mt-5 bg-white rounded-2xl border border-blue-100 p-4 sm:p-6">
+              <h3 className="text-sm font-semibold text-gray-700 mb-4">
+                Accesos rápidos de administración
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  {
+                    label: "Gestionar usuarios",
+                    ruta: "/perfil",
+                    icono: <IcoPerfil />,
+                    color: "bg-blue-50 text-blue-700 border-blue-200",
+                  },
+                  {
+                    label: "Ver inventario",
+                    ruta: "/inventario",
+                    icono: <IcoStock />,
+                    color: "bg-blue-50 text-blue-700 border-blue-200",
+                  },
+                  {
+                    label: "Generar reportes",
+                    ruta: "/reportes",
+                    icono: <IcoReportes />,
+                    color: "bg-blue-50 text-blue-700 border-blue-200",
+                  },
+                  {
+                    label: "Registrar vacuna",
+                    ruta: "/vacunas",
+                    icono: <IcoVacuna />,
+                    color: "bg-blue-50 text-blue-700 border-blue-200",
+                  },
+                ].map((a) => (
+                  <button
+                    key={a.label}
+                    onClick={() => navigate(a.ruta)}
+                    className={`flex items-center gap-2.5 px-3 py-3 rounded-xl border
+                               text-xs sm:text-sm font-medium transition
+                               hover:shadow-sm active:scale-[0.98] touch-manipulation
+                               ${a.color}`}
+                  >
+                    <span className="w-4 h-4 flex-shrink-0">{a.icono}</span>
+                    <span className="text-left leading-tight">{a.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Timestamp de última actualización */}
+          {!cargando && !error && (
+            <p className="text-center text-xs text-gray-400 mt-6">
+              Datos actualizados ·{" "}
+              {new Date().toLocaleTimeString("es-VE", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              {" · "}
+              <button
+                onClick={() => window.location.reload()}
+                className="text-blue-400 hover:text-blue-600 underline transition"
+              >
+                Actualizar ahora
+              </button>
+            </p>
+          )}
         </main>
       </div>
     </div>
   );
 }
 
-// ── Tarjeta stat ────────────────────────────────────────────
+// ── Tarjeta de estadística ──────────────────────────────────
 function StatCard({ label, valor, color, icono }) {
   const e =
     {
@@ -460,16 +619,21 @@ function StatCard({ label, valor, color, icono }) {
         val: "text-blue-900",
       },
       amber: {
-        wrap: "bg-amber-50 border-amber-100",
+        wrap: "bg-amber-50 border-amber-200",
         ic: "bg-amber-100 text-amber-600",
         val: "text-amber-900",
+      },
+      green: {
+        wrap: "bg-green-50 border-green-100",
+        ic: "bg-green-100 text-green-600",
+        val: "text-green-900",
       },
     }[color] || {};
   return (
     <div className={`${e.wrap} border rounded-2xl p-3 sm:p-4`}>
       <div
-        className={`w-8 h-8 sm:w-9 sm:h-9 ${e.ic} rounded-xl
-                      flex items-center justify-center mb-2 sm:mb-3`}
+        className={`w-8 h-8 sm:w-9 sm:h-9 ${e.ic} rounded-xl flex items-center
+                      justify-center mb-2 sm:mb-3`}
       >
         {icono}
       </div>
@@ -479,7 +643,7 @@ function StatCard({ label, valor, color, icono }) {
   );
 }
 
-// ── Tarjeta módulo ──────────────────────────────────────────
+// ── Tarjeta de módulo ───────────────────────────────────────
 function ModCard({ mod, onClick }) {
   return (
     <button
@@ -491,8 +655,8 @@ function ModCard({ mod, onClick }) {
     >
       <div className="flex items-start justify-between mb-3 sm:mb-4">
         <div
-          className={`w-11 h-11 sm:w-12 sm:h-12 ${mod.icBg} rounded-xl
-                        flex items-center justify-center ${mod.icColor}
+          className={`w-11 h-11 sm:w-12 sm:h-12 ${mod.icBg} rounded-xl flex items-center
+                        justify-center ${mod.icColor}
                         group-hover:scale-110 transition-transform`}
         >
           {mod.icono}
@@ -512,13 +676,12 @@ function ModCard({ mod, onClick }) {
         {mod.desc}
       </p>
       <div
-        className={`mt-3 sm:mt-4 flex items-center gap-1.5 text-xs sm:text-sm
-                      font-medium ${mod.icColor} opacity-0 group-hover:opacity-100
-                      transition-opacity duration-200`}
+        className={`mt-3 sm:mt-4 flex items-center gap-1.5 text-xs sm:text-sm font-medium
+                      ${mod.icColor} opacity-0 group-hover:opacity-100 transition-opacity`}
       >
         Abrir módulo
         <svg
-          className="w-3.5 h-3.5 sm:w-4 sm:h-4"
+          className="w-3.5 h-3.5"
           fill="none"
           stroke="currentColor"
           strokeWidth={2}
@@ -532,23 +695,6 @@ function ModCard({ mod, onClick }) {
         </svg>
       </div>
     </button>
-  );
-}
-function IcoJeringa({ className }) {
-  return (
-    <svg
-      className={className || "w-5 h-5"}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
-      />
-    </svg>
   );
 }
 // ── Iconos ──────────────────────────────────────────────────
