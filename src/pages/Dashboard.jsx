@@ -205,7 +205,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between px-4 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shadow">
-              <IcoVacuna className="w-5 h-5 text-blue-600" />
+              <IcoJeringa className="w-5 h-5 text-blue-600" />
             </div>
             <div>
               <p className="text-white text-sm font-semibold">Vacunación</p>
